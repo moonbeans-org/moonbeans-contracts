@@ -53,6 +53,10 @@ import "@uniswap/v2-core/contracts/interfaces/IUniswapV2Pair.sol";
 import "@uniswap/v2-core/contracts/interfaces/IUniswapV2Factory.sol";
 import "@uniswap/v2-periphery/contracts/interfaces/IUniswapV2Router02.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/draft-ERC20Permit.sol";
+import "@openzeppelin/contracts/utils/math/SafeMath.sol";
+import "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import "@openzeppelin/contracts/utils/math/SignedSafeMath.sol";
+
 
 contract Ownable is Context {
     address private _owner;
@@ -169,8 +173,12 @@ interface DividendPayingTokenOptionalInterface {
 ///  to token holders as dividends and allows token holders to withdraw their dividends.
 ///  Reference: the source code of PoWH3D: https://etherscan.io/address/0xB3775fB83F7D12A36E0475aBdD1FCA35c091efBe#code
 contract DividendPayingToken is ERC20, Ownable, DividendPayingTokenInterface, DividendPayingTokenOptionalInterface {
+  using SafeMath for uint256;
+  using SignedSafeMath for int256;
+  using SafeCast for uint256;
+  using SafeCast for int256;
 
-  address public REWARD = address(0x1436aE0dF0A8663F18c0Ec51d7e2E46591730715); //wdev
+  address public REWARD = address(0x1436aE0dF0A8663F18c0Ec51d7e2E46591730715); //WDEV
 
   // With `magnitude`, we can properly distribute dividends even if the amount of received ether is small.
   // For more discussion about choosing the value of `magnitude`,
@@ -195,7 +203,7 @@ contract DividendPayingToken is ERC20, Ownable, DividendPayingTokenInterface, Di
 
   uint256 public totalDividendsDistributed;
 
-  constructor(string memory _name, string memory _symbol) ERC20(_name, _symbol) {
+  constructor(string memory _name, string memory _symbol) public ERC20(_name, _symbol) {
 
   }
 
@@ -204,10 +212,12 @@ contract DividendPayingToken is ERC20, Ownable, DividendPayingTokenInterface, Di
     require(totalSupply() > 0);
 
     if (amount > 0) {
-      magnifiedDividendPerShare = magnifiedDividendPerShare + ((amount*magnitude) / totalSupply());
+      magnifiedDividendPerShare = magnifiedDividendPerShare.add(
+        (amount).mul(magnitude) / totalSupply()
+      );
       emit DividendsDistributed(msg.sender, amount);
 
-      totalDividendsDistributed = totalDividendsDistributed + amount;
+      totalDividendsDistributed = totalDividendsDistributed.add(amount);
     }
   }
 
@@ -222,14 +232,12 @@ contract DividendPayingToken is ERC20, Ownable, DividendPayingTokenInterface, Di
  function _withdrawDividendOfUser(address payable user) internal returns (uint256) {
     uint256 _withdrawableDividend = withdrawableDividendOf(user);
     if (_withdrawableDividend > 0) {
-      withdrawnDividends[user] = withdrawnDividends[user] + _withdrawableDividend;
+      withdrawnDividends[user] = withdrawnDividends[user].add(_withdrawableDividend);
       emit DividendWithdrawn(user, _withdrawableDividend);
       bool success = IERC20(REWARD).transfer(user, _withdrawableDividend);
 
       if(!success) {
-        unchecked {
-            withdrawnDividends[user] = withdrawnDividends[user] - _withdrawableDividend;
-        }
+        withdrawnDividends[user] = withdrawnDividends[user].sub(_withdrawableDividend);
         return 0;
       }
 
@@ -251,9 +259,7 @@ contract DividendPayingToken is ERC20, Ownable, DividendPayingTokenInterface, Di
   /// @param _owner The address of a token holder.
   /// @return The amount of dividend in wei that `_owner` can withdraw.
   function withdrawableDividendOf(address _owner) public view override returns(uint256) {
-    unchecked {
-        return accumulativeDividendOf(_owner) - withdrawnDividends[_owner];
-    }
+    return accumulativeDividendOf(_owner).sub(withdrawnDividends[_owner]);
   }
 
   /// @notice View the amount of dividend in wei that an address has withdrawn.
@@ -263,13 +269,15 @@ contract DividendPayingToken is ERC20, Ownable, DividendPayingTokenInterface, Di
     return withdrawnDividends[_owner];
   }
 
+
   /// @notice View the amount of dividend in wei that an address has earned in total.
   /// @dev accumulativeDividendOf(_owner) = withdrawableDividendOf(_owner) + withdrawnDividendOf(_owner)
   /// = (magnifiedDividendPerShare * balanceOf(_owner) + magnifiedDividendCorrections[_owner]) / magnitude
   /// @param _owner The address of a token holder.
   /// @return The amount of dividend in wei that `_owner` has earned in total.
   function accumulativeDividendOf(address _owner) public view override returns(uint256) {
-    return uint(int(magnifiedDividendPerShare * balanceOf(_owner)) + magnifiedDividendCorrections[_owner]) / magnitude;
+    return magnifiedDividendPerShare.mul(balanceOf(_owner)).toInt256()
+      .add(magnifiedDividendCorrections[_owner]).toUint256() / magnitude;
   }
 
   /// @dev Internal function that transfer tokens from one address to another.
@@ -279,11 +287,10 @@ contract DividendPayingToken is ERC20, Ownable, DividendPayingTokenInterface, Di
   /// @param value The amount to be transferred.
   function _transfer(address from, address to, uint256 value) internal virtual override {
     require(false);
-    int256 _magCorrection = int(magnifiedDividendPerShare * value);
-    magnifiedDividendCorrections[from] = magnifiedDividendCorrections[from] + _magCorrection;
-    unchecked {
-        magnifiedDividendCorrections[to] = magnifiedDividendCorrections[to] - _magCorrection;
-    }
+
+    int256 _magCorrection = magnifiedDividendPerShare.mul(value).toInt256();
+    magnifiedDividendCorrections[from] = magnifiedDividendCorrections[from].add(_magCorrection);
+    magnifiedDividendCorrections[to] = magnifiedDividendCorrections[to].sub(_magCorrection);
   }
 
   /// @dev Internal function that mints tokens to an account.
@@ -292,7 +299,9 @@ contract DividendPayingToken is ERC20, Ownable, DividendPayingTokenInterface, Di
   /// @param value The amount that will be created.
   function _mint(address account, uint256 value) internal override {
     super._mint(account, value);
-    magnifiedDividendCorrections[account] = magnifiedDividendCorrections[account] - int(magnifiedDividendPerShare * value);
+
+    magnifiedDividendCorrections[account] = magnifiedDividendCorrections[account]
+      .sub( (magnifiedDividendPerShare.mul(value)).toInt256() );
   }
 
   /// @dev Internal function that burns an amount of the token of a given account.
@@ -301,23 +310,20 @@ contract DividendPayingToken is ERC20, Ownable, DividendPayingTokenInterface, Di
   /// @param value The amount that will be burnt.
   function _burn(address account, uint256 value) internal override {
     super._burn(account, value);
-    magnifiedDividendCorrections[account] = magnifiedDividendCorrections[account] + int(magnifiedDividendPerShare * value);
+
+    magnifiedDividendCorrections[account] = magnifiedDividendCorrections[account]
+      .add( (magnifiedDividendPerShare.mul(value)).toInt256() );
   }
 
   function _setBalance(address account, uint256 newBalance) internal {
     uint256 currentBalance = balanceOf(account);
+
     if(newBalance > currentBalance) {
-        uint256 mintAmount;
-        unchecked {
-            mintAmount = newBalance - currentBalance;
-        }
-        _mint(account, mintAmount);
+      uint256 mintAmount = newBalance.sub(currentBalance);
+      _mint(account, mintAmount);
     } else if(newBalance < currentBalance) {
-        uint256 burnAmount;
-        unchecked {
-            burnAmount = currentBalance - newBalance;
-        }
-        _burn(account, burnAmount);
+      uint256 burnAmount = currentBalance.sub(newBalance);
+      _burn(account, burnAmount);
     }
   }
 }
@@ -384,6 +390,7 @@ library IterableMapping {
 }
 
 contract MoonSeeds is ERC20Permit, Ownable {
+    using SafeMath for uint256;
 
     IUniswapV2Router02 public uniswapV2Router;
     address public uniswapV2Pair;
@@ -404,7 +411,7 @@ contract MoonSeeds is ERC20Permit, Ownable {
     uint256 public REWARDRewardsFee = 200;
     uint256 public liquidityFee = 200;
     uint256 public buybackFee = 100;
-    uint256 public totalFees = REWARDRewardsFee + liquidityFee + buybackFee;
+    uint256 public totalFees = REWARDRewardsFee.add(liquidityFee).add(buybackFee);
 
     // use by default 300,000 gas to process auto-claiming dividends
     uint256 public gasForProcessing = 300000;
@@ -535,17 +542,17 @@ contract MoonSeeds is ERC20Permit, Ownable {
 
     function setRewardsFee(uint256 value) external onlyOwner{
         REWARDRewardsFee = value;
-        totalFees = REWARDRewardsFee + liquidityFee + buybackFee;
+        totalFees = REWARDRewardsFee.add(liquidityFee).add(buybackFee);
     }
 
     function setLiquidityFee(uint256 value) external onlyOwner{
         liquidityFee = value;
-        totalFees = REWARDRewardsFee + liquidityFee + buybackFee;
+        totalFees = REWARDRewardsFee.add(liquidityFee).add(buybackFee);
     }
 
     function setbuybackFee(uint256 value) external onlyOwner{
         buybackFee = value;
-        totalFees = REWARDRewardsFee + liquidityFee + buybackFee;
+        totalFees = REWARDRewardsFee.add(liquidityFee).add(buybackFee);
     }
 
     function setAutomatedMarketMakerPair(address pair, bool value) external onlyOwner {
@@ -676,12 +683,12 @@ contract MoonSeeds is ERC20Permit, Ownable {
         ) {
             swapping = true;
 
-            uint256 buyBackTokens = contractTokenBalance * buybackFee / totalFees;
+            uint256 buyBackTokens = contractTokenBalance.mul(buybackFee).div(totalFees);
             if (buyBackTokens > 0) {
                 swapAndSendToFee(buyBackTokens);
             }
 
-            uint256 swapTokens = contractTokenBalance * liquidityFee / totalFees;
+            uint256 swapTokens = contractTokenBalance.mul(liquidityFee).div(totalFees);
             if (swapTokens > 0) {
                 swapAndLiquify(swapTokens);
             }
@@ -702,7 +709,7 @@ contract MoonSeeds is ERC20Permit, Ownable {
         }
 
         if(takeFee) {
-          	uint256 fees = amount * totalFees / 10000;
+          	uint256 fees = amount.mul(totalFees).div(10000);
           	amount = amount - fees;
             super._transfer(from, address(this), fees);
         }
@@ -730,8 +737,8 @@ contract MoonSeeds is ERC20Permit, Ownable {
 
     function swapAndLiquify(uint256 tokens) private {
        // split the contract balance into halves
-        uint256 half = tokens / 2;
-        uint256 otherHalf = tokens - half;
+        uint256 half = tokens.div(2);
+        uint256 otherHalf = tokens.sub(half);
 
         // capture the contract's current ETH balance.
         // this is so that we can capture exactly the amount of ETH that the
@@ -743,7 +750,7 @@ contract MoonSeeds is ERC20Permit, Ownable {
         swapTokensForEth(half); // <- this breaks the ETH -> HATE swap when swap+liquify is triggered
 
         // how much ETH did we just swap into?
-        uint256 newBalance = address(this).balance - initialBalance;
+        uint256 newBalance = address(this).balance.sub(initialBalance);
 
         // add liquidity to uniswap
         addLiquidity(otherHalf, newBalance);
@@ -855,6 +862,8 @@ contract MoonSeeds is ERC20Permit, Ownable {
 }
 
 contract MoonSeedsDividendTracker is Ownable, DividendPayingToken {
+    using SafeMath for uint256;
+    using SignedSafeMath for int256;
     using IterableMapping for IterableMapping.Map;
 
     IterableMapping.Map private tokenHoldersMap;
@@ -925,19 +934,19 @@ contract MoonSeedsDividendTracker is Ownable, DividendPayingToken {
 
         if(index >= 0) {
             if(uint256(index) > lastProcessedIndex) {
-                iterationsUntilProcessed = index - (int256(lastProcessedIndex));
+                iterationsUntilProcessed = index.sub(int256(lastProcessedIndex));
             }
             else {
-                uint256 processesUntilEndOfArray = tokenHoldersMap.keys.length > lastProcessedIndex ? tokenHoldersMap.keys.length - lastProcessedIndex : 0;
-                iterationsUntilProcessed = index + (int256(processesUntilEndOfArray));
+                uint256 processesUntilEndOfArray = tokenHoldersMap.keys.length > lastProcessedIndex ? tokenHoldersMap.keys.length.sub(lastProcessedIndex) : 0;
+                iterationsUntilProcessed = index.add(int256(processesUntilEndOfArray));
             }
         }
 
         withdrawableDividends = withdrawableDividendOf(account);
         totalDividends = accumulativeDividendOf(account);
         lastClaimTime = lastClaimTimes[account];
-        nextClaimTime = lastClaimTime > 0 ? lastClaimTime + claimWait : 0;
-        secondsUntilAutoClaimAvailable = nextClaimTime > block.timestamp ? nextClaimTime - block.timestamp : 0;
+        nextClaimTime = lastClaimTime > 0 ? lastClaimTime.add(claimWait) : 0;
+        secondsUntilAutoClaimAvailable = nextClaimTime > block.timestamp ? nextClaimTime.sub(block.timestamp) : 0;
     }
 
     function getAccountAtIndex(uint256 index)
@@ -963,7 +972,7 @@ contract MoonSeedsDividendTracker is Ownable, DividendPayingToken {
     		return false;
     	}
 
-    	return block.timestamp - lastClaimTime >= claimWait;
+    	return block.timestamp.sub(lastClaimTime) >= claimWait;
     }
 
     function setBalance(address payable account, uint256 newBalance) external onlyOwner {
@@ -1009,7 +1018,7 @@ contract MoonSeedsDividendTracker is Ownable, DividendPayingToken {
     		iterations++;
     		uint256 newGasLeft = gasleft();
     		if(gasLeft > newGasLeft) {
-    			gasUsed = gasUsed + (gasLeft - newGasLeft);
+    			gasUsed = gasUsed.add(gasLeft.sub(newGasLeft));
     		}
     		gasLeft = newGasLeft;
     	}
@@ -1022,7 +1031,7 @@ contract MoonSeedsDividendTracker is Ownable, DividendPayingToken {
       uint256 amount = _withdrawDividendOfUser(account);
     	if(amount > 0) {
     		lastClaimTimes[account] = block.timestamp;
-        emit Claim(account, amount, automatic);
+            emit Claim(account, amount, automatic);
     		return true;
     	}
     	return false;
