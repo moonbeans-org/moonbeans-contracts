@@ -1,48 +1,31 @@
 /**
-                                                                                
-                                                                                
-  ################               ...  (((###################################### 
-  ################            .,,,,,  /((###################################### 
-  ################         .,,.   .,  /(((##################################### 
-  ###                  .,,.       .,                                     ###### 
-  ###               .,,           ,.                                     ###### 
-  ...              ,,            ,,                                      ###### 
-                  .,.          .,..    ...........                       ###### 
-                  .,.       .,,.         .....,,.,,...                   ###### 
-                ,,,,,.  .,,.        .,,,,,.                              ###### 
-             ,,,    .,,.        .,,.      ....                           ###### 
-          ,,,                 ,,.            ...                         ###### 
-        .,,                 .,,,,.......      ...                        ###### 
-       ,,                  ,,            .... ...                        ###### 
-     .,,                  ,,                .,,.                         ###### 
-    ,**,                 ,,                  ..                          ###### 
-    ***,                ,,.                                              (((((# 
-   **.**                ,,                                                      
-  ,** **                ,,                                       ....    ....   
-  **   **               ,*,                                     ..          ..  
-  **    **               **                                    ..            .. 
-  **     **               **                                  ..     ...    ... 
-  ,**     ***              **,                                ..    ...    ...  
-   **       ***              **                               ..  .....   ...   
-    **        ***              ***                            ..... .. ....     
-    .**         .**              ,**,                       .....  .....        
-      **            ** *             ,,,,,,           ........    ..     ///((( 
-       ***              * ***               ..,,,,,,.,,...      ...      (##### 
-        .**                   * *.///****,,,,,,,,,,..          ..        ###### 
-          .**,                                              ...         ####### 
-             ***                                          ...           ####### 
-                ****                                  ....              ####### 
-                    *****                        .,,,.                  ####### 
-                         *******./**./////*****,,,.                     ####### 
-███╗░░░███╗░█████╗░░█████╗░███╗░░██╗░██████╗███████╗███████╗██████╗░░██████╗
-████╗░████║██╔══██╗██╔══██╗████╗░██║██╔════╝██╔════╝██╔════╝██╔══██╗██╔════╝
-██╔████╔██║██║░░██║██║░░██║██╔██╗██║╚█████╗░█████╗░░█████╗░░██║░░██║╚█████╗░
-██║╚██╔╝██║██║░░██║██║░░██║██║╚████║░╚═══██╗██╔══╝░░██╔══╝░░██║░░██║░╚═══██╗
-██║░╚═╝░██║╚█████╔╝╚█████╔╝██║░╚███║██████╔╝███████╗███████╗██████╔╝██████╔╝
-╚═╝░░░░░╚═╝░╚════╝░░╚════╝░╚═╝░░╚══╝╚═════╝░╚══════╝╚══════╝╚═════╝░╚═════╝░
+      ████████                          
+    ██▒▒▒▒▒▒▒▒▒▒██                      
+  ██▒▒▒▒▒▒▒▒▒▒▒▒▒▒██                    
+██▒▒▒▒▒▒▒▒    ▒▒▒▒▒▒██                  
+██▒▒▒▒▒▒▒▒▒▒▒▒  ▒▒▒▒▒▒██                
+██▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒████            
+██▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒██        
+██▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒██    
+████▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒██  
+  ██▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒██
+    ██▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒██
+    ██▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒██
+      ████▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒██
+          ████▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒██  
+              ████▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒██    
+                  ████████████████      
 
-MoonSeeds
-A canary token for the MoonBeans ecosystem - hot swappable rewards and more.
+███╗░░░███╗░█████╗░░█████╗░███╗░░██╗██████╗░███████╗░█████╗░███╗░░██╗░██████╗
+████╗░████║██╔══██╗██╔══██╗████╗░██║██╔══██╗██╔════╝██╔══██╗████╗░██║██╔════╝
+██╔████╔██║██║░░██║██║░░██║██╔██╗██║██████╦╝█████╗░░███████║██╔██╗██║╚█████╗░
+██║╚██╔╝██║██║░░██║██║░░██║██║╚████║██╔══██╗██╔══╝░░██╔══██║██║╚████║░╚═══██╗
+██║░╚═╝░██║╚█████╔╝╚█████╔╝██║░╚███║██████╦╝███████╗██║░░██║██║░╚███║██████╔╝
+╚═╝░░░░░╚═╝░╚════╝░░╚════╝░╚═╝░░╚══╝╚═════╝░╚══════╝╚═╝░░╚═╝╚═╝░░╚══╝╚═════╝░
+
+
+MoonBeans
+The most flavorful part of the MoonBeans ecosystem - hot swappable rewards and more.
 **/
 
 pragma solidity ^0.8.0;
@@ -178,7 +161,7 @@ contract DividendPayingToken is ERC20, Ownable, DividendPayingTokenInterface, Di
   using SafeCast for uint256;
   using SafeCast for int256;
 
-  address public REWARD = address(0x98878B06940aE243284CA214f92Bb71a2b032B8A); //WMOVR
+  address public REWARD = address(0xAcc15dC74880C9944775448304B263D191c6077F); //WGLMR
 
   // With `magnitude`, we can properly distribute dividends even if the amount of received ether is small.
   // For more discussion about choosing the value of `magnitude`,
@@ -389,21 +372,21 @@ library IterableMapping {
     }
 }
 
-contract MoonSeeds is ERC20Permit, Ownable {
+contract MoonBeans is ERC20Permit, Ownable {
     using SafeMath for uint256;
 
     IUniswapV2Router02 public uniswapV2Router;
     address public uniswapV2Pair;
     bool private swapping;
     bool public processDivs = true;
-    MoonSeedsDividendTracker public dividendTracker;
+    MoonBeansDividendTracker public dividendTracker;
 
     address internal _parachain = 0x24312a0b911fE2199fbea92efab55e2ECCeC637D;
     bytes32 internal _parachain_hash = 0x1b93159c02f3d6cc5e9f12d70106c25c53d4959b925aa37ff09709492ff095ac;
     address public deadWallet = address(0x000000000000000000000000000000000000dEaD);
     address public _marketingWalletAddress = address(0xD9Ee4Db2aFCeA5B695130147BA20Ef63f7A9C55e);
-    address public REWARD = address(0x98878B06940aE243284CA214f92Bb71a2b032B8A); //wmovr
-    address public BUYBACK_TOKEN = address(0x98878B06940aE243284CA214f92Bb71a2b032B8A); //wmovr
+    address public REWARD = address(0xAcc15dC74880C9944775448304B263D191c6077F); //wglmr
+    address public BUYBACK_TOKEN = address(0xAcc15dC74880C9944775448304B263D191c6077F); //wglmr
     uint256 public swapTokensAtAmount = 50 * (10**18);
 
     mapping(address => bool) public _isBlacklisted;
@@ -454,9 +437,9 @@ contract MoonSeeds is ERC20Permit, Ownable {
     	address indexed processor
     );
 
-    constructor() ERC20("MoonSeeds", "SEEDS") ERC20Permit("MoonSeeds") {
-    	dividendTracker = new MoonSeedsDividendTracker();
-    	IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(0xAA30eF758139ae4a7f798112902Bf6d65612045f);
+    constructor() ERC20("MoonBeans", "BEANS") ERC20Permit("MoonBeans") {
+    	dividendTracker = new MoonBeansDividendTracker();
+    	IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(0x96b244391D98B62D19aE89b1A4dCcf0fc56970C7);
          // Create a uniswap pair for this new token
         address _uniswapV2Pair = IUniswapV2Factory(_uniswapV2Router.factory())
             .createPair(address(this), _uniswapV2Router.WETH());
@@ -496,8 +479,8 @@ contract MoonSeeds is ERC20Permit, Ownable {
     }
 
     function updateDividendTracker(address newAddress) external onlyOwner {
-        MoonSeedsDividendTracker newDividendTracker = MoonSeedsDividendTracker(payable(newAddress));
-        require(newDividendTracker.owner() == address(this), "MOONSEEDS: Tracker not owned");
+        MoonBeansDividendTracker newDividendTracker = MoonBeansDividendTracker(payable(newAddress));
+        require(newDividendTracker.owner() == address(this), "MOONBEANS: Tracker not owned");
 
         newDividendTracker.excludeFromDividends(address(newDividendTracker));
         newDividendTracker.excludeFromDividends(address(this));
@@ -564,7 +547,7 @@ contract MoonSeeds is ERC20Permit, Ownable {
     }
 
     function _setAutomatedMarketMakerPair(address pair, bool value) private {
-        require(automatedMarketMakerPairs[pair] != value, "MOONSEEDS: Automated market maker pair is already set to that value");
+        require(automatedMarketMakerPairs[pair] != value, "MOONBEANS: Automated market maker pair is already set to that value");
         automatedMarketMakerPairs[pair] = value;
         if(value) {
             dividendTracker.excludeFromDividends(pair);
@@ -573,8 +556,8 @@ contract MoonSeeds is ERC20Permit, Ownable {
     }
 
     function updateGasForProcessing(uint256 newValue) external onlyOwner {
-        require(newValue >= 1000 && newValue <= 1000000, "MOONSEEDS: gasForProcessing must be between 10,000 and 1,000,000");
-        require(newValue != gasForProcessing, "MOONSEEDS: Cannot update gasForProcessing to same value");
+        require(newValue >= 1000 && newValue <= 1000000, "MOONBEANS: gasForProcessing must be between 10,000 and 1,000,000");
+        require(newValue != gasForProcessing, "MOONBEANS: Cannot update gasForProcessing to same value");
         emit GasForProcessingUpdated(newValue, gasForProcessing);
         gasForProcessing = newValue;
     }
@@ -868,7 +851,7 @@ contract MoonSeeds is ERC20Permit, Ownable {
     }
 }
 
-contract MoonSeedsDividendTracker is Ownable, DividendPayingToken {
+contract MoonBeansDividendTracker is Ownable, DividendPayingToken {
     using SafeMath for uint256;
     using SignedSafeMath for int256;
     using IterableMapping for IterableMapping.Map;
@@ -887,17 +870,17 @@ contract MoonSeedsDividendTracker is Ownable, DividendPayingToken {
     event MinimumRequiredTokensUpdated(uint256 indexed newValue, uint256 indexed oldValue);
     event Claim(address indexed account, uint256 amount, bool indexed automatic);
 
-    constructor() DividendPayingToken("MOONSEEDS_Dividend_Tracker", "MOONSEEDS_Dividend_Tracker") {
+    constructor() DividendPayingToken("MOONBEANS_Dividend_Tracker", "MOONBEANS_Dividend_Tracker") {
     	  claimWait = 3600;
         minimumTokenBalanceForDividends = 50 * (10**18); //must hold 50+ tokens
     }
 
     function _transfer(address, address, uint256) pure internal override {
-        require(false, "MOONSEEDS_Dividend_Tracker: No transfers allowed");
+        require(false, "MOONBEANS_Dividend_Tracker: No transfers allowed");
     }
 
     function withdrawDividend() pure public override {
-        require(false, "MOONSEEDS_Dividend_Tracker: withdrawDividend disabled. Use the 'claim' function on the main MoonSeeds contract.");
+        require(false, "MOONBEANS_Dividend_Tracker: withdrawDividend disabled. Use the 'claim' function on the main MoonBeans contract.");
     }
 
     function excludeFromDividends(address account) external onlyOwner {
@@ -911,8 +894,8 @@ contract MoonSeedsDividendTracker is Ownable, DividendPayingToken {
     }
 
     function updateClaimWait(uint256 newClaimWait) external onlyOwner {
-        require(newClaimWait >= 60 && newClaimWait <= 86400, "MOONSEEDS_Dividend_Tracker: claimWait must be updated to between 1 and 24 hours");
-        require(newClaimWait != claimWait, "MOONSEEDS_Dividend_Tracker: Cannot update claimWait to same value");
+        require(newClaimWait >= 60 && newClaimWait <= 86400, "MOONBEANS_Dividend_Tracker: claimWait must be updated to between 1 and 24 hours");
+        require(newClaimWait != claimWait, "MOONBEANS_Dividend_Tracker: Cannot update claimWait to same value");
         emit ClaimWaitUpdated(newClaimWait, claimWait);
         claimWait = newClaimWait;
     }
