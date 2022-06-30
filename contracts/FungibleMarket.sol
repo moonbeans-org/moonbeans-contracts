@@ -1,6 +1,6 @@
 //Custom NFT Marketplace Contract. From your favorite beans around - MoonBeans!
 
-pragma solidity ^0.8.4;
+pragma solidity ^0.8.9;
 // SPDX-License-Identifier: MIT
 
 import "@openzeppelin/contracts/access/Ownable.sol";
@@ -19,13 +19,13 @@ contract FungibleMarketPlace is ERC1155Receiver, ERC1155Holder, ReentrancyGuard,
   event TradeCancelled(bytes32 indexed tradeID, address indexed token, uint256 indexed id, uint256 nonce, uint256 quantity, uint256 price, address user, bool isSelling, uint256 deadline, uint256 timestamp);
   event EscrowReturned(address indexed user, uint256 indexed price);
 
-  // Fees are out of 1000, to theoretically allow for 0.1 - 0.9% fees in the future.
+  // Fees are out of 1000, to allow for 0.1% stepped fees.
   uint256 public devFee = 10; //1%
   uint256 public beanieHolderFee = 10; //1%
   uint256 public beanBuybackFee = 10; //1%
   uint256 public defaultCollectionOwnerFee = 0; //0%
   uint256 public totalEscrowedAmount = 0;
-  uint256 public specialTaxGas = 100000;
+  uint256 public specialTaxGas = 100000; //use a certain amount of gas to send 
   uint256 public nonce = 0;
 
   IERC20 public TOKEN = IERC20(0xAcc15dC74880C9944775448304B263D191c6077F); //WETH/WMOVR/WGLMR/WHATEVER
@@ -75,7 +75,7 @@ contract FungibleMarketPlace is ERC1155Receiver, ERC1155Holder, ReentrancyGuard,
 
   // TRADES
   // Open a trade (from either the buyer or the seller's side).
-  function openTrade(address ca, uint256 tokenId, uint256 quantity, uint256 price, uint256 deadline, bool isSelling, bool escrowed) public payable nonReentrant {
+  function openTrade(address ca, uint256 tokenId, uint256 quantity, uint256 price, uint256 deadline, bool isSelling, bool escrowed) external payable nonReentrant {
     
     // Basic checks.
     require(!tradingPaused, "Marketplace trading is disabled.");
@@ -110,7 +110,7 @@ contract FungibleMarketPlace is ERC1155Receiver, ERC1155Holder, ReentrancyGuard,
 
 
   // Cancel a trade that the sender initiated.
-  function cancelTrade(bytes32 tradeID) public nonReentrant {
+  function cancelTrade(bytes32 tradeID) external nonReentrant {
     // Validate that trade can be cancelled.
     Trade memory _trade = trades[tradeID];
     require(_trade.status != Status.CANCELLED, "Trade already cancelled.");
@@ -119,16 +119,17 @@ contract FungibleMarketPlace is ERC1155Receiver, ERC1155Holder, ReentrancyGuard,
     if (_trade.escrowed) require(totalInEscrow[_trade.initiator] >= _trade.price && totalEscrowedAmount >= _trade.price, "Invalid refund.");
 
     //Update trade status and emit event.
+    Status originalStatus = _trade.status;
     _trade.status = Status.CANCELLED;
     trades[tradeID] = _trade;
     emit TradeCancelled(tradeID, _trade.ca, _trade.tokenId, _trade.nonce, _trade.quantity, _trade.price, _trade.initiator, _trade.status == Status.OPEN_SALE, _trade.deadline, block.timestamp);
 
     //Return escrowed funds if necessary.
-    if (_trade.escrowed) returnEscrowedFunds(_trade.initiator, _trade.price);
+    if (_trade.escrowed || originalStatus == Status.OPEN_BUY) returnEscrowedFunds(_trade.initiator, _trade.price);
   }
 
 
-  function acceptTrade(bytes32 tradeID) public payable nonReentrant {
+  function acceptTrade(bytes32 tradeID) external payable nonReentrant {
     //Validate that trade can be accepted.
     Trade memory _trade = trades[tradeID];
     require(!tradingPaused, "Marketplace trading is disabled.");
@@ -140,16 +141,18 @@ contract FungibleMarketPlace is ERC1155Receiver, ERC1155Holder, ReentrancyGuard,
     address payable nftSeller;
     address nftBuyer;
     if (_trade.status == Status.OPEN_SALE) {
-      if (_trade.escrowed) require(msg.value >= _trade.price, "Insufficient funds.");
-      if (!_trade.escrowed) require((TOKEN.allowance(msg.sender, address(this)) >= _trade.price) && (TOKEN.balanceOf(msg.sender) >= _trade.price), "Insuffiicent funds.");
+      if (_trade.escrowed) require(msg.value >= _trade.price, "Buyer has insufficient funds.");
+      if (!_trade.escrowed) require((TOKEN.allowance(msg.sender, address(this)) >= _trade.price) && (TOKEN.balanceOf(msg.sender) >= _trade.price), "Buyer has insuffiicent funds.");
       require(IERC1155(_trade.ca).isApprovedForAll(_trade.initiator, address(this)), "Marketplace not approved.");
+      require(IERC1155(_trade.ca).balanceOf(_trade.initiator, _trade.tokenId) >= _trade.quantity, "Seller has insufficient funds.");
 
       nftSeller = payable(_trade.initiator);
       nftBuyer = msg.sender;
     } else if (_trade.status == Status.OPEN_BUY) {
-      if (_trade.escrowed) require(totalInEscrow[_trade.initiator] >= _trade.price, "Insufficient funds.");
-      if (!_trade.escrowed) require((TOKEN.allowance(_trade.initiator, address(this)) >= _trade.price) && (TOKEN.balanceOf(_trade.initiator) >= _trade.price), "Insufficient funds.");
+      if (_trade.escrowed) require(totalInEscrow[_trade.initiator] >= _trade.price, "Buyer has insufficient funds.");
+      if (!_trade.escrowed) require((TOKEN.allowance(_trade.initiator, address(this)) >= _trade.price) && (TOKEN.balanceOf(_trade.initiator) >= _trade.price), "Buyer has insufficient funds.");
       require(IERC1155(_trade.ca).isApprovedForAll(msg.sender, address(this)), "Marketplace not approved.");
+      require(IERC1155(_trade.ca).balanceOf(msg.sender, _trade.tokenId) >= _trade.quantity, "Seller has insufficient funds.");
 
       nftSeller = payable(msg.sender);
       nftBuyer = _trade.initiator;
