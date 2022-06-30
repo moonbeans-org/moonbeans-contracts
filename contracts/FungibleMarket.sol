@@ -125,7 +125,7 @@ contract FungibleMarketPlace is ERC1155Receiver, ERC1155Holder, ReentrancyGuard,
     emit TradeCancelled(tradeID, _trade.ca, _trade.tokenId, _trade.nonce, _trade.quantity, _trade.price, _trade.initiator, _trade.status == Status.OPEN_SALE, _trade.deadline, block.timestamp);
 
     //Return escrowed funds if necessary.
-    if (_trade.escrowed || originalStatus == Status.OPEN_BUY) returnEscrowedFunds(_trade.initiator, _trade.price);
+    if (_trade.escrowed && originalStatus == Status.OPEN_BUY) returnEscrowedFunds(_trade.initiator, _trade.price);
   }
 
 
