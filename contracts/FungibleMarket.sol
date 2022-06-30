@@ -166,12 +166,8 @@ contract FungibleMarketPlace is ERC1155Receiver, ERC1155Holder, ReentrancyGuard,
     bool isSelling = _trade.status == Status.OPEN_SALE;
     _trade.status = Status.ACCEPTED;
     trades[tradeID] = _trade;
-    emit TradeAccepted(tradeID, _trade.ca, _trade.tokenId, _trade.nonce, _trade.quantity, _trade.price, nftSeller, nftBuyer, isSelling, _trade.deadline, block.timestamp);
 
-    //Swippity Swappity
-    IERC1155(_trade.ca).safeTransferFrom(nftSeller, nftBuyer, _trade.tokenId, _trade.quantity, []);
-    if (_trade.escrowed) nftSeller.transfer(remainder);
-    if (!_trade.escrowed) TOKEN.transferFrom(nftBuyer, nftSeller, remainder);
+    acceptAndEmit(tradeID, _trade, nftSeller, nftBuyer, isSelling, remainder);
 
     //Send Fees
     if (feesOn) {
@@ -249,7 +245,7 @@ contract FungibleMarketPlace is ERC1155Receiver, ERC1155Holder, ReentrancyGuard,
   }
 
   function setPaymentToken(address _token) external onlyOwner {
-    TOKEN = _token;
+    TOKEN = IERC20(_token);
   }
 
   function setTrading(bool value) external onlyOwner {
@@ -334,7 +330,7 @@ contract FungibleMarketPlace is ERC1155Receiver, ERC1155Holder, ReentrancyGuard,
 
   // Emergency only - Recover 1155s
   function recover1155(address _token, uint256 tokenId, uint256 amount) external onlyOwner {
-    IERC1155(_token).safeTransferFrom(address(this), owner(), tokenId, amount, []);
+    IERC1155(_token).safeTransferFrom(address(this), owner(), tokenId, amount, "");
   }
 
   // Emergency only - Recover ETH/MOVR/GLMR/WHATEVER
@@ -367,6 +363,15 @@ contract FungibleMarketPlace is ERC1155Receiver, ERC1155Holder, ReentrancyGuard,
   function sendFeeWithExtraGas(address recipient, uint256 amount) internal {
     (bool success, ) = recipient.call{gas: specialTaxGas, value: amount}("");
     require(success, "Transfer failed.");
+  }
+
+  function acceptAndEmit(bytes32 tradeID, Trade memory _trade, address payable nftSeller, address nftBuyer, bool isSelling, uint256 remainder) private {
+    emit TradeAccepted(tradeID, _trade.ca, _trade.tokenId, _trade.nonce, _trade.quantity, _trade.price, nftSeller, nftBuyer, isSelling, _trade.deadline, block.timestamp);
+
+    //Swippity Swappity
+    IERC1155(_trade.ca).safeTransferFrom(nftSeller, nftBuyer, _trade.tokenId, _trade.quantity, "");
+    if (_trade.escrowed) nftSeller.transfer(remainder);
+    if (!_trade.escrowed) TOKEN.transferFrom(nftBuyer, nftSeller, remainder);
   }
 
 }
