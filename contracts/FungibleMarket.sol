@@ -168,6 +168,7 @@ contract FungibleMarketPlace is ERC1155Receiver, ERC1155Holder, ReentrancyGuard,
     }
     bool isSelling = _trade.status == Status.OPEN_SALE;
     _trade.status = Status.ACCEPTED;
+    _trade.acceptor = msg.sender;
     trades[tradeID] = _trade;
 
     acceptAndEmit(tradeID, _trade, nftSeller, nftBuyer, isSelling, remainder);
