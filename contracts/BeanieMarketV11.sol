@@ -18,6 +18,7 @@ contract MarketPlace is IERC721Receiver, ReentrancyGuard, Ownable {
   event BidCancelled(address indexed token, uint256 indexed id, uint256 indexed price, address buyer, bool escrowed, uint256 timestamp);
   event EscrowReturned(address indexed user, uint256 indexed price);
 
+  // FIXME: change this to bips
   // Fees are out of 1000, to theoretically allow for 0.1 - 0.9% fees in the future.
   uint256 public devFee = 10; //1%
   uint256 public beanieHolderFee = 10; //1%
