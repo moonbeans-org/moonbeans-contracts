@@ -9,7 +9,10 @@ import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
-contract MarketPlace is IERC721Receiver, ReentrancyGuard, Ownable {
+error BEANOwnerNotApproved();
+error BEANListingNotActive();
+
+contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
 
   event TokenListed(address indexed token, uint256 indexed id, uint256 indexed price, uint256 timestamp);
   event TokenDelisted(address indexed token, uint256 indexed id, uint256 timestamp);
@@ -34,14 +37,12 @@ contract MarketPlace is IERC721Receiver, ReentrancyGuard, Ownable {
 
   struct Listing {
     uint256 price;
-    uint256 timestamp;
     uint256 tokenId;
-    bool accepted;
+    address lister;
   }
 
   struct Offer {
     uint256 price;
-    uint256 timestamp;
     bool accepted;
     bool escrowed;
     address buyer;
@@ -55,7 +56,7 @@ contract MarketPlace is IERC721Receiver, ReentrancyGuard, Ownable {
   bool public clearBidsAfterFulfillingListing = false;
   bool public collectionOwnersCanSetRoyalties = true;
   mapping(address => bool) collectionTradingEnabled;
-  mapping(address => mapping(uint256 => Listing[])) listings;
+  mapping(address => mapping(uint256 => Listing)) listings;
   mapping(address => mapping(uint256 => Offer[])) offers;
   mapping(address => address) collectionOwners;
   mapping(address => uint256) totalInEscrow;
@@ -75,55 +76,44 @@ contract MarketPlace is IERC721Receiver, ReentrancyGuard, Ownable {
   // Required in order to receive MOVR/ETH.
   receive() external payable { }
 
-
-
   // LISTINGS
   // Public wrapper around token delisting, requiring ownership to delist.
   function delistToken(address ca, uint256 tokenId) public {
-    require(msg.sender == IERC721(ca).ownerOf(tokenId) || administrators[msg.sender], "Only the owner of a token can delist it.");
-    _delistToken(ca, tokenId);
-  }
-
-  // Returns value in the 'listings' mapping for a specific address + id to the default (0).
-  function _delistToken(address ca, uint256 tokenId) private {
-    listings[ca][tokenId].push(Listing(0, block.timestamp, tokenId, false));
+    if(!(msg.sender == IERC721(ca).ownerOf(tokenId) || administrators[msg.sender]))
+      revert BEANOwnerNotApproved();
+    
+    delete listings[ca][tokenId];
     emit TokenDelisted(ca, tokenId, block.timestamp);
   }
 
   // Lists a token at the specified price point.
   function listToken(address ca, uint256 tokenId, uint256 price) public {
-    require(msg.sender == IERC721(ca).ownerOf(tokenId), "Only the owner of a token can list it.");
+    IERC721 token = IERC721(ca);
+    //FIXME: Is this necessary if contract has isApprovedForAll, since isApprovedForAll is called in context of msg.sender?
+    require(msg.sender == token.ownerOf(tokenId), "Only the owner of a token can list it.");
     require(price != 0, "Cannot set price to 0.");
-    require(IERC721(ca).isApprovedForAll(msg.sender, address(this)), "Marketplace not approved to handle this users tokens.");
-    listings[ca][tokenId].push(Listing(price, block.timestamp, tokenId, false));
+    require(token.isApprovedForAll(msg.sender, address(this)), "Marketplace not approved to handle this users tokens.");
+    
+    listings[ca][tokenId] = Listing(price, tokenId, msg.sender);
     emit TokenListed(ca, tokenId, price, block.timestamp);
   }
 
   // Check if a token already has any listings.
   function isListed(address ca, uint256 tokenId) public view returns (bool) {
-    uint256 index = listings[ca][tokenId].length;
-    if (index == 0) {
-      return false;
-    }
-    return listings[ca][tokenId][index - 1].price != 0;
+    return (listings[ca][tokenId].price != 0);
   }
 
   // Getter for the current asking price on a specific token.
   function getCurrentListingPrice(address ca, uint256 tokenId) public view returns (uint256){
-    return getCurrentListing(ca, tokenId).price;
+    return listings[ca][tokenId].price;
   }
 
   // Getter for the latest listing on a specific token.
-  function getCurrentListing(address ca, uint256 tokenId) public view returns (Listing memory){
-    uint256 numListings = getNumberOfListings(ca, tokenId);
-    require(numListings != 0, "No listings for this token.");
-    return listings[ca][tokenId][numListings-1];
-  }
-
-  // Getter for all listings of a unique token.
-  function getTokenListingHistory(address ca, uint256 tokenId) external view returns (Listing[] memory) {
-    return listings[ca][tokenId];
-  }
+  // FIXME: Can probably remove this, since returning with all fields 0 is 'delisted.'
+  // function getCurrentListing(address ca, uint256 tokenId) public view returns (Listing memory){
+  //   require(listings[ca][tokenId].price != 0, "No listings for this token.");
+  //   return listings[ca][tokenId];
+  // }
 
   // Allows a buyer to buy at the listed price.
   function fulfillListing(address ca, uint256 tokenId) external payable nonReentrant {
@@ -134,43 +124,40 @@ contract MarketPlace is IERC721Receiver, ReentrancyGuard, Ownable {
     require(price != 0, "This token is not currently listed.");
 
     //get current NFT owner, verify approval
-    address payable oldOwner = payable(IERC721(ca).ownerOf(tokenId));
-    require(IERC721(ca).isApprovedForAll(oldOwner, address(this)), "Marketplace not approved to transfer this NFT.");
-
-    //get buyer, calculate fees, store seller original balance
-    address payable newOwner = payable(msg.sender);
-    (uint256 devFeeAmount, uint256 beanieHolderFeeAmount, uint256 beanBuybackFeeAmount, uint256 collectionOwnerFeeAmount, uint256 remainder) = calculateAmounts(ca, price);
-    uint256 oldOwnerMovrBalance = oldOwner.balance;
+    address oldOwner = listings[ca][tokenId].lister;
+    // FIXME: Unnecessary, ERC721 token contract will throw an error for you if safeTransferFrom fails
+    // require(IERC721(ca).isApprovedForAll(oldOwner, address(this)), "Marketplace not approved to transfer this NFT.");
 
     //swippity swappity
-    IERC721(ca).safeTransferFrom(oldOwner, newOwner, tokenId);
-    oldOwner.transfer(remainder);
 
+    //effects
+    delete listings[ca][tokenId];
+    if (clearBidsAfterFulfillingListing) {
+      _clearAllBids(ca, tokenId);
+    }
+
+    //Interaction
+    IERC721(ca).safeTransferFrom(oldOwner, msg.sender, tokenId);
+    (uint256 devFeeAmount, uint256 beanieHolderFeeAmount, uint256 beanBuybackFeeAmount, uint256 collectionOwnerFeeAmount, uint256 remainder) = calculateAmounts(ca, price);
+    _sendEth(oldOwner, remainder);
     //Check that all went swimmingly
-    require(IERC721(ca).ownerOf(tokenId) == newOwner, "NFT was not successfully transferred.");
-    require(oldOwner.balance >= (oldOwnerMovrBalance + remainder), "Funds were not successfully sent.");
-    emit TokenPurchased(oldOwner, newOwner, price, ca, tokenId);
-
+    require(IERC721(ca).ownerOf(tokenId) == msg.sender, "NFT was not successfully transferred.");
     //fees
     if (feesOn) {
+      //FIXME: if beanieHolderAddress, beanieBuybackAddress, and devAddress corresponding fees are not dynamic, this can be batched (like dividend tokens)
       if (useSuperGasTaxes) {
         sendFeeWithExtraGas(beanieHolderAddress, beanieHolderFeeAmount);
         sendFeeWithExtraGas(beanBuybackAddress, beanBuybackFeeAmount);
         sendFeeWithExtraGas(collectionOwners[ca], collectionOwnerFeeAmount);
         sendFeeWithExtraGas(devAddress, devFeeAmount);
       } else {
-        payable(collectionOwners[ca]).transfer(collectionOwnerFeeAmount);
-        payable(devAddress).transfer(devFeeAmount);
-        payable(beanieHolderAddress).transfer(beanieHolderFeeAmount);
-        payable(beanBuybackAddress).transfer(beanBuybackFeeAmount);
+        _sendEth(beanieHolderAddress, beanieHolderFeeAmount);
+        _sendEth(beanBuybackAddress, beanBuybackFeeAmount);
+        _sendEth(collectionOwners[ca], collectionOwnerFeeAmount);
+        _sendEth(devAddress, devFeeAmount);
       }
     }
-
-    markListingAsAccepted(ca, tokenId);
-    if (clearBidsAfterFulfillingListing) {
-      _clearAllBids(ca, tokenId);
-    }
-    _delistToken(ca, tokenId);
+    emit TokenPurchased(oldOwner, msg.sender, price, ca, tokenId);
   }
 
 
@@ -182,7 +169,7 @@ contract MarketPlace is IERC721Receiver, ReentrancyGuard, Ownable {
     require(price != 0, "Cannot bid a price of 0.");
     require(msg.sender.balance >= price, "The buyer does not have enough money to make the bid.");
     require(IERC20(TOKEN).allowance(msg.sender, address(this)) >= price, "Not an escrowed bid; approval required (Default: WMOVR).");
-    offers[ca][tokenId].push(Offer(price, block.timestamp, false, false, msg.sender));
+    offers[ca][tokenId].push(Offer(price, false, false, msg.sender));
     emit BidPlaced(ca, tokenId, price, msg.sender, block.timestamp, false);
   }
 
@@ -194,7 +181,7 @@ contract MarketPlace is IERC721Receiver, ReentrancyGuard, Ownable {
     totalEscrowedAmount += msg.value;
     totalInEscrow[msg.sender] += msg.value;
 
-    offers[ca][tokenId].push(Offer(price, block.timestamp, false, true, msg.sender));
+    offers[ca][tokenId].push(Offer(price, false, true, msg.sender));
     emit BidPlaced(ca, tokenId, price, msg.sender, block.timestamp, true);
   }
 
@@ -265,12 +252,9 @@ contract MarketPlace is IERC721Receiver, ReentrancyGuard, Ownable {
     if (clearBidsAfterAcceptingOffer) {
       _clearAllBids(ca, tokenId);
     }
-    if(delistAfterAcceptingOffer && isListed(ca, tokenId)) {
-      _delistToken(ca, tokenId);
-    }
+    //Clean listing
+    delete listings[ca][tokenId];
   }
-
-
 
   // PUBLIC ESCROW FUNCTIONS
   function addMoneyToEscrow() external payable nonReentrant {
@@ -431,8 +415,6 @@ contract MarketPlace is IERC721Receiver, ReentrancyGuard, Ownable {
     payable(to).transfer(amount);
   }
 
-
-
   // PRIVATE HELPERS
   function calculateAmounts(address ca, uint256 amount) private view returns (uint256, uint256, uint256, uint256, uint256){
     uint256 _collectionOwnerFee = collectionOwnerFees[ca] == 0 ? defaultCollectionOwnerFee : collectionOwnerFees[ca];
@@ -444,21 +426,6 @@ contract MarketPlace is IERC721Receiver, ReentrancyGuard, Ownable {
     return (devFeeAmount, beanieHolderFeeAmount, beanBuybackFeeAmount, collectionOwnerFeeAmount, remainder);
   }
 
-  function getNumberOfListings(address ca, uint256 tokenId) private view returns (uint256) {
-    return listings[ca][tokenId].length;
-  }
-
-  function markListingAsAccepted(address ca, uint256 tokenId) private {
-    Listing memory current = getCurrentListing(ca, tokenId);
-    Listing memory replaced = current;
-    replaced.accepted = true;
-
-    uint256 index = getNumberOfListings(ca, tokenId);
-    if (index != 0) {
-      listings[ca][tokenId][index - 1] = replaced;
-    }
-  }
-
   function markOfferAsAccepted(address ca, uint256 tokenId, uint256 i, Offer storage offer) private {
     Offer memory replaced = offer;
     replaced.accepted = true;
@@ -466,6 +433,7 @@ contract MarketPlace is IERC721Receiver, ReentrancyGuard, Ownable {
   }
 
   function returnEscrowedFunds(address user, uint256 price) private {
+    // Probably unnecessary
     require(totalEscrowedAmount >= price, "Not enough funds to return escrow. Theoretically impossible.");
     require(totalInEscrow[user] >= price, "Not enough funds to return escrow. Theoretically impossible.");
     totalEscrowedAmount -= price;
@@ -501,10 +469,10 @@ contract MarketPlace is IERC721Receiver, ReentrancyGuard, Ownable {
         sendFeeWithExtraGas(collectionOwners[ca], collectionOwnerFeeAmount);
         sendFeeWithExtraGas(devAddress, devFeeAmount);
       } else {
-        payable(collectionOwners[ca]).transfer(collectionOwnerFeeAmount);
-        payable(devAddress).transfer(devFeeAmount);
-        payable(beanieHolderAddress).transfer(beanieHolderFeeAmount);
-        payable(beanBuybackAddress).transfer(beanBuybackFeeAmount);
+        _sendEth(collectionOwners[ca], collectionOwnerFeeAmount);
+        _sendEth(devAddress, devFeeAmount);
+        _sendEth(beanieHolderAddress, beanieHolderFeeAmount);
+        _sendEth(beanBuybackAddress, beanBuybackFeeAmount);
       }
     }
   }
@@ -560,6 +528,16 @@ contract MarketPlace is IERC721Receiver, ReentrancyGuard, Ownable {
     }
 
     if (wipeEm) delete offers[ca][tokenId];
+  }
+
+  //View-only function for frontend filtering -- probably want to use this with .map() + wagmi's useContractReads()
+  function isValidListing(address ca, uint256 tokenId) public view returns(bool isValid) {
+    isValid = (listings[ca][tokenId].price != 0 && IERC721(ca).ownerOf(tokenId) == listings[ca][tokenId].lister);
+  }
+
+  function _sendEth(address _address, uint256 _amount) private {
+      (bool success, ) = _address.call{value: _amount}("");
+      require(success, "Transfer failed.");
   }
 
 }

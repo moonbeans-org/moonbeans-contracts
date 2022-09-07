@@ -18,12 +18,10 @@ module.exports = {
   networks: {
     moonbaseAlpha: {
       url: "https://moonbeam-alpha.api.onfinality.io/public",
-      accounts: ['']
-    },
+      accounts: process.env.PRIVATE_KEY !== undefined ? [process.env.PRIVATE_KEY] : [],    },
     moonriver: {
       url: "https://moonriver.api.onfinality.io/public",
-      accounts: ['']
-    }
+      accounts: process.env.PRIVATE_KEY !== undefined ? [process.env.PRIVATE_KEY] : [],    }
   },
   gasReporter: {
     enabled: process.env.REPORT_GAS !== undefined,
