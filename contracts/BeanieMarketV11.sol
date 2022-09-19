@@ -11,6 +11,10 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 error BEANOwnerNotApproved();
 error BEANListingNotActive();
+error BEANTradingPaused();
+error BEANNotOwnerOrAdmin();
+
+//TODO: Make autosend dev fees a flag
 
 contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
 
@@ -30,6 +34,10 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
   uint256 public totalEscrowedAmount = 0;
   uint256 public specialTaxGas = 100000;
 
+  uint256 public accruedDevFees;
+  uint256 public accruedBeanieFees;
+  uint256 public accruedBeanieBuyback;
+
   address public TOKEN = 0xAcc15dC74880C9944775448304B263D191c6077F; //WGLMR
   address public devAddress = 0x24312a0b911fE2199fbea92efab55e2ECCeC637D;
   address public beanieHolderAddress = 0x6e0fa1dC8E3e6510aeBF14fCa3d83C77a9780ecB;
@@ -37,34 +45,42 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
 
   struct Listing {
     uint256 price;
-    uint256 tokenId;
     address lister;
+    uint256 expiry;
   }
 
   struct Offer {
     uint256 price;
-    bool accepted;
+    uint256 posInBuyersList;
+    uint256 expiry;
     bool escrowed;
-    address buyer;
   }
 
   bool public tradingPaused = false;
   bool public useSuperGasTaxes = false;
   bool public feesOn = true;
+  bool public autoSendDevFees = false;
   bool public delistAfterAcceptingOffer = true;
   bool public clearBidsAfterAcceptingOffer = false;
   bool public clearBidsAfterFulfillingListing = false;
   bool public collectionOwnersCanSetRoyalties = true;
+
   mapping(address => bool) collectionTradingEnabled;
   mapping(address => mapping(uint256 => Listing)) listings;
-  mapping(address => mapping(uint256 => Offer[])) offers;
+
+  // mapping of contract address to tokenId to array of offer hashes
+  mapping(address => mapping(uint256 => mapping(address => Offer))) public offers;
+  // mapping of contract address to tokenId to list of buyers with offers
+  mapping(address => mapping(uint256 => address[])) public buyersList;
+  
   mapping(address => address) collectionOwners;
   mapping(address => uint256) totalInEscrow;
   mapping(address => uint256) collectionOwnerFees;
   mapping(address => bool) administrators;
 
   modifier onlyAdmins {
-    require(administrators[_msgSender()] || owner() == _msgSender(), "Not owner or admin.");
+    if (!(administrators[_msgSender()] || owner() == _msgSender()))
+      revert BEANNotOwnerOrAdmin();
     _;
   }
 
@@ -94,7 +110,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     require(price != 0, "Cannot set price to 0.");
     require(token.isApprovedForAll(msg.sender, address(this)), "Marketplace not approved to handle this users tokens.");
     
-    listings[ca][tokenId] = Listing(price, tokenId, msg.sender);
+    listings[ca][tokenId] = Listing(price, msg.sender, block.timestamp);
     emit TokenListed(ca, tokenId, price, block.timestamp);
   }
 
@@ -117,11 +133,12 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
 
   // Allows a buyer to buy at the listed price.
   function fulfillListing(address ca, uint256 tokenId) external payable nonReentrant {
-    require(!tradingPaused, "Marketplace trading is disabled.");
+    if (tradingPaused)
+      revert BEANTradingPaused();
     require(collectionTradingEnabled[ca], "Trading for this collection is not enabled.");
     uint256 price = getCurrentListingPrice(ca, tokenId);
-    require(msg.value >= price, "The amount sent is less than the asking price.");
     require(price != 0, "This token is not currently listed.");
+    require(msg.value >= price, "The amount sent is less than the asking price.");
 
     //get current NFT owner, verify approval
     address oldOwner = listings[ca][tokenId].lister;
@@ -145,43 +162,51 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     //fees
     if (feesOn) {
       //FIXME: if beanieHolderAddress, beanieBuybackAddress, and devAddress corresponding fees are not dynamic, this can be batched (like dividend tokens)
-      if (useSuperGasTaxes) {
-        sendFeeWithExtraGas(beanieHolderAddress, beanieHolderFeeAmount);
-        sendFeeWithExtraGas(beanBuybackAddress, beanBuybackFeeAmount);
-        sendFeeWithExtraGas(collectionOwners[ca], collectionOwnerFeeAmount);
-        sendFeeWithExtraGas(devAddress, devFeeAmount);
-      } else {
-        _sendEth(beanieHolderAddress, beanieHolderFeeAmount);
-        _sendEth(beanBuybackAddress, beanBuybackFeeAmount);
         _sendEth(collectionOwners[ca], collectionOwnerFeeAmount);
-        _sendEth(devAddress, devFeeAmount);
-      }
+        if (autoSendDevFees) {
+          _sendEth(devAddress, devFeeAmount);
+          _sendEth(beanieHolderAddress, beanieHolderFeeAmount);
+          _sendEth(beanBuybackAddress, beanBuybackFeeAmount);
+        } else {
+          accruedDevFees += devFeeAmount;
+          accruedBeanieFees += beanieHolderFeeAmount;
+          accruedBeanieBuyback += beanBuybackFeeAmount;
+        }
     }
     emit TokenPurchased(oldOwner, msg.sender, price, ca, tokenId);
   }
 
+function _processDevFees() private {
 
+}
 
   // OFFERS
   // Make a standard offer (checks balance of bidder, but does not escrow).
-  function makeOffer(address ca, uint256 tokenId, uint256 price) public {
-    require(msg.sender != IERC721(ca).ownerOf(tokenId), "Can not bid on your own NFT.");
+  function makeOffer(address ca, uint256 tokenId, uint256 price, uint256 expiry) public {
+    //FIXME: Can probably remove this. Trivial workaround having a second wallet.
+    // require(msg.sender != IERC721(ca).ownerOf(tokenId), "Can not bid on your own NFT.");
     require(price != 0, "Cannot bid a price of 0.");
     require(msg.sender.balance >= price, "The buyer does not have enough money to make the bid.");
     require(IERC20(TOKEN).allowance(msg.sender, address(this)) >= price, "Not an escrowed bid; approval required (Default: WMOVR).");
-    offers[ca][tokenId].push(Offer(price, false, false, msg.sender));
+    uint256 posInBuyersList = offers[ca][tokenId][msg.sender].price == 0 ? buyersList[ca][tokenId].length : offers[ca][tokenId][msg.sender].posInBuyersList;
+    buyersList[ca][tokenId][posInBuyersList] = msg.sender;
+    offers[ca][tokenId][msg.sender] = Offer(price, posInBuyersList, expiry, false);
+
     emit BidPlaced(ca, tokenId, price, msg.sender, block.timestamp, false);
   }
 
   // Make an escrowed offer (checks balance of bidder, then holds the bid in the contract as an escrow).
-  function makeEscrowedOffer(address ca, uint256 tokenId, uint256 price) public payable nonReentrant {
-    require(msg.sender != IERC721(ca).ownerOf(tokenId), "Can not bid on your own NFT.");
+  function makeEscrowedOffer(address ca, uint256 tokenId, uint256 price, uint256 expiry) public payable nonReentrant {
+    //FIXME: Can probably remove this. Trivial workaround having a second wallet.
+    // require(msg.sender != IERC721(ca).ownerOf(tokenId), "Can not bid on your own NFT.");
     require(price != 0, "Cannot bid a price of 0.");
     require(msg.value >= price, "The buyer did not send enough money for an escrowed bid.");
     totalEscrowedAmount += msg.value;
     totalInEscrow[msg.sender] += msg.value;
 
-    offers[ca][tokenId].push(Offer(price, false, true, msg.sender));
+    uint256 posInBuyersList = offers[ca][tokenId][msg.sender].price == 0 ? buyersList[ca][tokenId].length : offers[ca][tokenId][msg.sender].posInBuyersList;
+    buyersList[ca][tokenId][posInBuyersList] = msg.sender;
+    offers[ca][tokenId][msg.sender] = Offer(price, posInBuyersList, expiry, true);
     emit BidPlaced(ca, tokenId, price, msg.sender, block.timestamp, true);
   }
 
@@ -222,7 +247,8 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     IERC721 _nft = IERC721(ca);
     require(msg.sender == _nft.ownerOf(tokenId), "Only the owner of this NFT can accept an offer.");
     require(_nft.isApprovedForAll(msg.sender, address(this)), "Marketplace not approved to transfer this NFT.");
-    require(!tradingPaused, "Marketplace trading is disabled.");
+    if (tradingPaused)
+      revert BEANTradingPaused();
     require(collectionTradingEnabled[ca], "Trading for this collection is not enabled.");
     Offer[] storage _offers = _getOffers(ca, tokenId);
     uint256 correctIndex = 999999999999999999;
@@ -271,8 +297,6 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
   function getEscrowedAmount(address user) external view returns (uint256) {
     return totalInEscrow[user];
   }
-
-
 
   // OTHER PUBLIC FUNCTIONS
   function getCollectionOwner(address ca) external view returns (address) {
@@ -413,7 +437,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
   // Emergency only - Recover MOVR
   function RecoverMOVR(address to, uint256 amount) external onlyOwner {
     payable(to).transfer(amount);
-  }
+  } 
 
   // PRIVATE HELPERS
   function calculateAmounts(address ca, uint256 amount) private view returns (uint256, uint256, uint256, uint256, uint256){
@@ -463,16 +487,15 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
 
     //fees
     if (feesOn) {
-      if (useSuperGasTaxes) {
-        sendFeeWithExtraGas(beanieHolderAddress, beanieHolderFeeAmount);
-        sendFeeWithExtraGas(beanBuybackAddress, beanBuybackFeeAmount);
-        sendFeeWithExtraGas(collectionOwners[ca], collectionOwnerFeeAmount);
-        sendFeeWithExtraGas(devAddress, devFeeAmount);
-      } else {
-        _sendEth(collectionOwners[ca], collectionOwnerFeeAmount);
+      _sendEth(collectionOwners[ca], collectionOwnerFeeAmount);
+      if (autoSendDevFees) {
         _sendEth(devAddress, devFeeAmount);
         _sendEth(beanieHolderAddress, beanieHolderFeeAmount);
         _sendEth(beanBuybackAddress, beanBuybackFeeAmount);
+      } else {
+        accruedDevFees += devFeeAmount;
+        accruedBeanieFees += beanieHolderFeeAmount;
+        accruedBeanieBuyback += beanBuybackFeeAmount;
       }
     }
   }
@@ -497,11 +520,6 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
       _token.transferFrom(address(this), beanieHolderAddress, beanieHolderFeeAmount);
       _token.transferFrom(address(this), beanBuybackAddress, beanBuybackFeeAmount);
     }
-  }
-
-  function sendFeeWithExtraGas(address recipient, uint256 amount) internal {
-    (bool success, ) = recipient.call{gas: specialTaxGas, value: amount}("");
-    require(success, "Transfer failed.");
   }
 
   function _clearAllBids(address ca, uint256 tokenId) internal {
