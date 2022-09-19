@@ -8,8 +8,10 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "./BeanUtils.sol";
 
 error BEANOwnerNotApproved();
+error BEANNotAuthorized();
 error BEANListingNotActive();
 error BEANTradingPaused();
 error BEANNotOwnerOrAdmin();
@@ -17,6 +19,8 @@ error BEANNotOwnerOrAdmin();
 //TODO: Make autosend dev fees a flag
 
 contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
+
+  using BeanUtils for address[];
 
   event TokenListed(address indexed token, uint256 indexed id, uint256 indexed price, uint256 timestamp);
   event TokenDelisted(address indexed token, uint256 indexed id, uint256 timestamp);
@@ -44,8 +48,8 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
   address public beanBuybackAddress = 0xE9b8258668E17AFA5D09de9F10381dE5565dbDc0;
 
   struct Listing {
-    uint256 price;
     address lister;
+    uint256 price;
     uint256 expiry;
   }
 
@@ -72,6 +76,11 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
   mapping(address => mapping(uint256 => mapping(address => Offer))) public offers;
   // mapping of contract address to tokenId to list of buyers with offers
   mapping(address => mapping(uint256 => address[])) public buyersList;
+
+  // mapping of contract address to tokenId to array of offer hashes
+  mapping(address => mapping(uint256 => mapping(address => Offer))) public escrowOffers;
+  // mapping of contract address to tokenId to list of buyers with offers
+  mapping(address => mapping(uint256 => address[])) public escrowBuyersList;
   
   mapping(address => address) collectionOwners;
   mapping(address => uint256) totalInEscrow;
@@ -110,7 +119,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     require(price != 0, "Cannot set price to 0.");
     require(token.isApprovedForAll(msg.sender, address(this)), "Marketplace not approved to handle this users tokens.");
     
-    listings[ca][tokenId] = Listing(price, msg.sender, block.timestamp);
+    listings[ca][tokenId] = Listing(msg.sender, price, block.timestamp);
     emit TokenListed(ca, tokenId, price, block.timestamp);
   }
 
@@ -204,32 +213,39 @@ function _processDevFees() private {
     totalEscrowedAmount += msg.value;
     totalInEscrow[msg.sender] += msg.value;
 
-    uint256 posInBuyersList = offers[ca][tokenId][msg.sender].price == 0 ? buyersList[ca][tokenId].length : offers[ca][tokenId][msg.sender].posInBuyersList;
-    buyersList[ca][tokenId][posInBuyersList] = msg.sender;
-    offers[ca][tokenId][msg.sender] = Offer(price, posInBuyersList, expiry, true);
+    uint256 posInBuyersList = escrowOffers[ca][tokenId][msg.sender].price == 0 ? escrowBuyersList[ca][tokenId].length : escrowOffers[ca][tokenId][msg.sender].posInBuyersList;
+    escrowBuyersList[ca][tokenId][posInBuyersList] = msg.sender;
+    escrowOffers[ca][tokenId][msg.sender] = Offer(price, posInBuyersList, expiry, true);
     emit BidPlaced(ca, tokenId, price, msg.sender, block.timestamp, true);
   }
 
   // Cancel an offer (escrowed or not). Could have gas issues if there's too many offers...
-  function cancelOffer(address ca, uint256 tokenId, uint256 price, bool escrowed) external nonReentrant {
-    Offer[] storage _offers = _getOffers(ca, tokenId);
-    for (uint i = 0; i < _offers.length; i++) {
-      if (escrowed) {
-        if (_offers[i].price == price && _offers[i].buyer == msg.sender && _offers[i].escrowed && !_offers[i].accepted) {
-          delete offers[ca][tokenId][i];
-          returnEscrowedFunds(msg.sender, price);
-          emit BidCancelled(ca, tokenId, price, msg.sender, escrowed, block.timestamp);
-          return;
-        }
-      } else {
-        if (_offers[i].price == price && _offers[i].buyer == msg.sender && !_offers[i].escrowed && !_offers[i].accepted) {
-          delete offers[ca][tokenId][i];
-          emit BidCancelled(ca, tokenId, price, msg.sender, escrowed, block.timestamp);
-          return;
-        }
-      }
-    }
-    revert('No cancellable offer found.');
+  function cancelOffer(address ca, uint256 tokenId, address user) external nonReentrant {
+    uint256 expiry = offers[ca][tokenId][user].expiry;
+    
+    //TODO: Test this because I always futz up my bools
+    if (user != msg.sender && !administrators[msg.sender] && expiry < block.timestamp)
+      revert BEANNotAuthorized();
+    if (offers[ca][tokenId][user].price == 0)
+      revert('No cancellable offer found.');
+      
+    uint256 posInBuyersList = offers[ca][tokenId][user].posInBuyersList;
+    buyersList[ca][tokenId].swapPop(posInBuyersList);
+    delete offers[ca][tokenId][user];
+  }
+
+  function cancelEscrowedOffer(address ca, uint256 tokenId, address user) external nonReentrant {
+    uint256 expiry = escrowOffers[ca][tokenId][user].expiry;
+    
+    //TODO: Test this because I always futz up my bools
+    if (user != msg.sender && !administrators[msg.sender] && expiry < block.timestamp)
+      revert BEANNotAuthorized();
+    if (offers[ca][tokenId][user].price == 0)
+      revert('No cancellable offer found.');
+      
+    uint256 posInBuyersList = escrowOffers[ca][tokenId][user].posInBuyersList;
+    escrowBuyersList[ca][tokenId].swapPop(posInBuyersList);
+    delete escrowOffers[ca][tokenId][user];
   }
 
   // Getter for all bids on a unique token.
