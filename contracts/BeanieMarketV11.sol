@@ -16,6 +16,16 @@ error BEANListingNotActive();
 error BEANTradingPaused();
 error BEANNotOwnerOrAdmin();
 
+//General
+error BEANZeroPrice();
+
+//Offers
+error BEANContractNotApproved();
+error BEANUserTokensLow();
+error BEANOfferArrayPosMismatch();
+error BEANNoCancellableOffer();
+error BEANEscrowAlreadyWithdrawn();
+
 //TODO: Make autosend dev fees a flag
 
 //Anyone can delist nfts that are not approved or have passed expiry
@@ -27,35 +37,37 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         address indexed token,
         uint256 indexed id,
         uint256 indexed price,
-        uint256 timestamp
+        uint256 expiry,
+        bytes32 listingHash
     );
     event TokenDelisted(
         address indexed token,
         uint256 indexed id,
-        uint256 timestamp
+        bytes32 listingHash
     );
     event TokenPurchased(
         address indexed oldOwner,
         address indexed newOwner,
         uint256 indexed price,
         address collection,
-        uint256 tokenId
+        uint256 tokenId,
+        bytes32 listingHash
     );
-    event BidPlaced(
+    event OfferPlaced(
         address indexed token,
         uint256 indexed id,
         uint256 indexed price,
+        uint256 expiry,
         address buyer,
-        uint256 timestamp,
-        bool escrowed
+        bytes32 offerHash
     );
-    event BidCancelled(
+    event OfferCancelled(
         address indexed token,
         uint256 indexed id,
         uint256 indexed price,
+        uint256 expiry,
         address buyer,
-        bool escrowed,
-        uint256 timestamp
+        bytes32 offerHash
     );
     event EscrowReturned(address indexed user, uint256 indexed price);
 
@@ -103,10 +115,10 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     mapping(address => mapping(bytes32 => uint256)) posInListerArray;
 
     mapping(bytes32 => Offer) offers;
-    mapping(address => bytes32[]) orderHashesByBuyer;
+    mapping(address => bytes32[]) offerHashesByBuyer;
 
     //This may not actually be necessary.
-    mapping(address => mapping(bytes32 => uint256)) posInBuyerArray;
+    // mapping(address => mapping(bytes32 => uint256)) posInBuyerArray;
 
     bool public tradingPaused = false;
     bool public useSuperGasTaxes = false;
@@ -185,10 +197,9 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         emit TokenListed(
             ca,
             tokenId,
-            listingHash,
             price,
             expiry,
-            block.timestamp
+            listingHash
         );
     }
 
@@ -267,11 +278,185 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
             msg.sender,
             listing.price,
             listing.contractAddress,
-            listing.tokenId
+            listing.tokenId,
+            listingId
         );
     }
 
-    function _processDevFees(
+    // OFFERS
+    // Make a standard offer (checks balance of bidder, but does not escrow).
+    function makeOffer(
+        address ca,
+        uint256 tokenId,
+        uint256 price,
+        uint256 expiry
+    ) public {
+
+        //FIXME: Can probably remove this. Trivial workaround having a second wallet.
+        // require(msg.sender != IERC721(ca).ownerOf(tokenId), "Can not bid on your own NFT.");
+        
+        if (price == 0)
+            revert BEANZeroPrice();
+        if (IERC20(TOKEN).allowance(msg.sender, address(this)) < price)
+            revert BEANContractNotApproved();
+        if (TOKEN.balanceOf(msg.sender) < price)
+            revert BEANUserTokensLow();
+
+        bytes32 offerHash = _storeOffer(ca, tokenId, price, expiry, false);
+
+        emit OfferPlaced(ca, tokenId, price, block.timestamp, msg.sender, false);
+    }
+
+    function _storeOffer(
+        address ca,
+        uint256 tokenId,
+        uint256 price,
+        uint256 expiry,
+        bool escrowed
+    ) private returns(bytes32 offerHash) {
+        //FIXME: futz around with this to see if we can shave off some gas later.
+        offerHash = keccak256(
+            abi.encode(
+                ca,
+                tokenId,
+                msg.sender,
+                offerHashesByOfferer[msg.sender].length
+            )
+        );
+
+        offers[offerHash] = Offer(
+            tokenId,
+            uint128(price),
+            uint128(expiry),
+            ca,
+            msg.sender,
+            escrowed
+        );
+
+        offerHashesByBuyer[msg.sender].push(offerHash);
+    }
+
+    // Make an escrowed offer (checks balance of bidder, then holds the bid in the contract as an escrow).
+    function makeEscrowedOffer(
+        address ca,
+        uint256 tokenId,
+        uint256 price,
+        uint256 expiry
+    ) public payable nonReentrant {
+        //FIXME: Can probably remove this. Trivial workaround having a second wallet.
+        // require(msg.sender != IERC721(ca).ownerOf(tokenId), "Can not bid on your own NFT.");
+        if (price == 0)
+            revert BEANZeroPrice();
+        require(
+            msg.value == price,
+            "The buyer did not send enough money for an escrowed offer."
+        );
+        totalEscrowedAmount += msg.value;
+        totalInEscrow[msg.sender] += msg.value;
+
+        bytes32 offerHash = _storeOffer(ca, tokenId, price, expiry, true);
+
+        emit OfferPlaced(ca, tokenId, price, expiry, msg.sender, offerHash);
+    }
+
+    // Cancel an offer (escrowed or not). Could have gas issues if there's too many offers...
+    function cancelOffer(
+        bytes32 offerHash,
+        uint256 posInOffererArray,
+        bool returnEscrow
+    ) external nonReentrant {
+
+        Offer memory offer = offers[offerHash];
+
+        //TODO: Test this because I always futz up my bools
+        if (
+            offer.offerer != msg.sender &&
+            !administrators[msg.sender] &&
+            offer.expiry < block.timestamp
+        ) revert BEANNotAuthorized();
+        if (offer.price == 0)
+            revert BEANNoCancellableOffer();
+        if (offerHashesByBuyer[offer.offerer][posInOffererArray] != offerHash)
+            revert BEANOfferArrayPosMismatch();
+
+        offerHashesByBuyer[offer.offerer].swapPop(posInBuyersList);
+        delete offers[offerHash];
+
+        if (offer.escrowed && returnEscrow) {
+            if (offer.escrowed > totalInEscrow[offer.offerer])
+                revert BEANEscrowAlreadyWithdrawn();
+            _returnEscrow(offer.offerer, offer.price);
+        }
+    }
+
+    function _returnEscrow(address depositor, uint256 escrowAmount) private {
+        totalEscrowedAmount -= escrowAmount;
+        totalInEscrow[depositor] -= escrowAmount;
+        _sendEth(depositor, escrowAmount); 
+    }
+
+    // Accept an active offer.
+    function acceptOffer(
+        bytes32 offerHash,
+        uint256 posInOffererArray
+    ) external nonReentrant {
+
+        Offer memory offer = offers[offerHash];
+
+        IERC721 _nft = IERC721(offer.contractAddress);
+        require(
+            msg.sender == _nft.ownerOf(offer.tokenId),
+            "Only the owner of this NFT can accept an offer."
+        );
+        require(
+            collectionTradingEnabled[ca],
+            "Trading for this collection is not enabled."
+        );
+
+        if (tradingPaused) revert BEANTradingPaused();
+
+        //Cleanup offer storage - abstract this to a function
+        if (offerHashesByBuyer[offer.offerer][posInOffererArray] != offerHash)
+            revert BEANOfferArrayPosMismatch();
+
+        offerHashesByBuyer[offer.offerer].swapPop(posInBuyersList);
+        delete offers[offerHash];
+
+        // Actually perform trade
+        address payable oldOwner = payable(address(msg.sender));
+        address payable newOwner = payable(address(offer.offerer));
+        if (offer.escrowed) {
+            escrowedPurchase(_nft, ca, tokenId, price, oldOwner, newOwner);
+        } else {
+            tokenPurchase(_nft, ca, tokenId, price, oldOwner, newOwner);
+        }
+    }
+
+    // PUBLIC ESCROW FUNCTIONS
+    function addMoneyToEscrow() external payable nonReentrant {
+        require(
+            msg.value >= 10000000 gwei,
+            "Minimum escrow deposit is 0.01 MOVR."
+        );
+        totalEscrowedAmount += msg.value;
+        totalInEscrow[msg.sender] += msg.value;
+    }
+
+    function withdrawMoneyFromEscrow(uint256 amount) external nonReentrant {
+        require(
+            totalInEscrow[msg.sender] >= amount,
+            "Trying to withdraw more than deposited."
+        );
+        returnEscrowedFunds(msg.sender, amount);
+    }
+
+    function getEscrowedAmount(address user) external view returns (uint256) {
+        return totalInEscrow[user];
+    }
+
+    // DEV FEE PROCESSING
+
+        function _processDevFees(
         uint256 devAmount,
         uint256 beanieHolderAmount,
         uint256 beanieBuybackAmount
@@ -302,212 +487,6 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         accruedBeanieBuyback =  accruedBeanieBuyback - beanieBuybackAmount;
 
         _processDevFees(devFeeAmount, beanieFeeAmount, beanieBuybackAmount);
-    }
-
-    // OFFERS
-    // Make a standard offer (checks balance of bidder, but does not escrow).
-    function makeOffer(
-        address ca,
-        uint256 tokenId,
-        uint256 price,
-        uint256 expiry
-    ) public {
-        //FIXME: Can probably remove this. Trivial workaround having a second wallet.
-        // require(msg.sender != IERC721(ca).ownerOf(tokenId), "Can not bid on your own NFT.");
-        require(price != 0, "Cannot bid a price of 0.");Aggregators themselves don't support flashloans, but the pools they operate
-        require(
-            msg.sender.balance >= price,
-            "The buyer does not have enough money to make the bid."
-        );
-        require(
-            IERC20(TOKEN).allowance(msg.sender, address(this)) >= price,
-            "Not an escrowed bid; approval required (Default: WMOVR)."
-        );
-        uint256 posInBuyersList = offers[ca][tokenId][msg.sender].price == 0
-            ? buyersList[ca][tokenId].length
-            : offers[ca][tokenId][msg.sender].posInBuyersList;
-        buyersList[ca][tokenId][posInBuyersList] = msg.sender;
-        offers[ca][tokenId][msg.sender] = Offer(
-            price,
-            posInBuyersList,
-            expiry,
-            false
-        );
-
-        emit BidPlaced(ca, tokenId, price, msg.sender, block.timestamp, false);
-    }
-
-    // Make an escrowed offer (checks balance of bidder, then holds the bid in the contract as an escrow).
-    function makeEscrowedOffer(
-        address ca,
-        uint256 tokenId,
-        uint256 price,
-        uint256 expiry
-    ) public payable nonReentrant {
-        //FIXME: Can probably remove this. Trivial workaround having a second wallet.
-        // require(msg.sender != IERC721(ca).ownerOf(tokenId), "Can not bid on your own NFT.");
-        require(price != 0, "Cannot bid a price of 0.");
-        require(
-            msg.value >= price,
-            "The buyer did not send enough money for an escrowed bid."
-        );
-        totalEscrowedAmount += msg.value;
-        totalInEscrow[msg.sender] += msg.value;
-
-        uint256 posInBuyersList = escrowOffers[ca][tokenId][msg.sender].price ==
-            0
-            ? escrowBuyersList[ca][tokenId].length
-            : escrowOffers[ca][tokenId][msg.sender].posInBuyersList;
-        escrowBuyersList[ca][tokenId][posInBuyersList] = msg.sender;
-        escrowOffers[ca][tokenId][msg.sender] = Offer(
-            price,
-            posInBuyersList,
-            expiry,
-            true
-        );
-        emit BidPlaced(ca, tokenId, price, msg.sender, block.timestamp, true);
-    }
-
-    // Cancel an offer (escrowed or not). Could have gas issues if there's too many offers...
-    function cancelOffer(
-        address ca,
-        uint256 tokenId,
-        address user
-    ) external nonReentrant {
-        uint256 expiry = offers[ca][tokenId][user].expiry;
-
-        //TODO: Test this because I always futz up my bools
-        if (
-            user != msg.sender &&
-            !administrators[msg.sender] &&
-            expiry < block.timestamp
-        ) revert BEANNotAuthorized();
-        if (offers[ca][tokenId][user].price == 0)
-            revert("No cancellable offer found.");
-
-        uint256 posInBuyersList = offers[ca][tokenId][user].posInBuyersList;
-        buyersList[ca][tokenId].swapPop(posInBuyersList);
-        delete offers[ca][tokenId][user];
-    }
-
-    function cancelEscrowedOffer(
-        address ca,
-        uint256 tokenId,
-        address user
-    ) external nonReentrant {
-        uint256 expiry = escrowOffers[ca][tokenId][user].expiry;
-
-        //TODO: Test this because I always futz up my bools
-        if (
-            user != msg.sender &&
-            !administrators[msg.sender] &&
-            expiry < block.timestamp
-        ) revert BEANNotAuthorized();
-        if (offers[ca][tokenId][user].price == 0)
-            revert("No cancellable offer found.");
-
-        uint256 posInBuyersList = escrowOffers[ca][tokenId][user]
-            .posInBuyersList;
-        escrowBuyersList[ca][tokenId].swapPop(posInBuyersList);
-        delete escrowOffers[ca][tokenId][user];
-    }
-
-    // Getter for all bids on a unique token.
-    function getOffers(address ca, uint256 tokenId)
-        external
-        view
-        returns (Offer[] memory)
-    {
-        return offers[ca][tokenId];
-    }
-
-    // Same as above, but for internal calls/passing offers object by reference.
-    function _getOffers(address ca, uint256 tokenId)
-        internal
-        view
-        returns (Offer[] storage)
-    {
-        return offers[ca][tokenId];
-    }
-
-    // Accept an active offer.
-    function acceptOffer(
-        address ca,
-        uint256 tokenId,
-        uint256 price,
-        address from,
-        bool escrowedBid
-    ) external nonReentrant {
-        IERC721 _nft = IERC721(ca);
-        require(
-            msg.sender == _nft.ownerOf(tokenId),
-            "Only the owner of this NFT can accept an offer."
-        );
-        require(
-            _nft.isApprovedForAll(msg.sender, address(this)),
-            "Marketplace not approved to transfer this NFT."
-        );
-        if (tradingPaused) revert BEANTradingPaused();
-        require(
-            collectionTradingEnabled[ca],
-            "Trading for this collection is not enabled."
-        );
-        Offer[] storage _offers = _getOffers(ca, tokenId);
-        uint256 correctIndex = 999999999999999999;
-        for (uint256 i = _offers.length - 1; i >= 0; i--) {
-            if (
-                _offers[i].price == price &&
-                _offers[i].buyer == from &&
-                _offers[i].accepted == false &&
-                _offers[i].escrowed == escrowedBid
-            ) {
-                correctIndex = i;
-                break;
-            }
-        }
-        require(
-            correctIndex != 999999999999999999,
-            "Matching offer not found..."
-        );
-
-        // Actually perform trade
-        address payable oldOwner = payable(address(msg.sender));
-        address payable newOwner = payable(address(from));
-        if (escrowedBid) {
-            escrowedPurchase(_nft, ca, tokenId, price, oldOwner, newOwner);
-        } else {
-            tokenPurchase(_nft, ca, tokenId, price, oldOwner, newOwner);
-        }
-
-        // Clean up data structures
-        markOfferAsAccepted(ca, tokenId, correctIndex, _offers[correctIndex]);
-        if (clearBidsAfterAcceptingOffer) {
-            _clearAllBids(ca, tokenId);
-        }
-        //Clean listing
-        delete listings[ca][tokenId];
-    }
-
-    // PUBLIC ESCROW FUNCTIONS
-    function addMoneyToEscrow() external payable nonReentrant {
-        require(
-            msg.value >= 10000000 gwei,
-            "Minimum escrow deposit is 0.01 MOVR."
-        );
-        totalEscrowedAmount += msg.value;
-        totalInEscrow[msg.sender] += msg.value;
-    }
-
-    function withdrawMoneyFromEscrow(uint256 amount) external nonReentrant {
-        require(
-            totalInEscrow[msg.sender] >= amount,
-            "Trying to withdraw more than deposited."
-        );
-        returnEscrowedFunds(msg.sender, amount);
-    }
-
-    function getEscrowedAmount(address user) external view returns (uint256) {
-        return totalInEscrow[user];
     }
 
     // OTHER PUBLIC FUNCTIONS
