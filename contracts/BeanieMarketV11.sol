@@ -31,7 +31,7 @@ error BEANEscrowAlreadyWithdrawn();
 //Anyone can delist nfts that are not approved or have passed expiry
 
 contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
-    using BeanUtils for address[];
+    using BeanUtils for bytes32[];
 
     event TokenListed(
         address indexed token,
@@ -219,7 +219,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         emit TokenDelisted(
             listing.contractAddress,
             listing.tokenId,
-            block.timestamp
+            listingId
         );
     }
 
@@ -240,7 +240,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         //get current NFT owner, verify approval
         address oldOwner = listing.lister;
         //TODO: possible gas savings by reducing memory height
-        IERC721 memory token = IERC721(listing.contractAddress);
+        IERC721 token = IERC721(listing.contractAddress);
 
         //effects - remove listing
         delete listings[listingId];
@@ -299,12 +299,12 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
             revert BEANZeroPrice();
         if (IERC20(TOKEN).allowance(msg.sender, address(this)) < price)
             revert BEANContractNotApproved();
-        if (TOKEN.balanceOf(msg.sender) < price)
+        if (IERC20(TOKEN).balanceOf(msg.sender) < price)
             revert BEANUserTokensLow();
 
         bytes32 offerHash = _storeOffer(ca, tokenId, price, expiry, false);
 
-        emit OfferPlaced(ca, tokenId, price, block.timestamp, msg.sender, false);
+        emit OfferPlaced(ca, tokenId, price, expiry, msg.sender, offerHash);
     }
 
     function _storeOffer(
@@ -320,7 +320,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
                 ca,
                 tokenId,
                 msg.sender,
-                offerHashesByOfferer[msg.sender].length
+                offerHashesByBuyer[msg.sender].length
             )
         );
 
@@ -379,11 +379,11 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         if (offerHashesByBuyer[offer.offerer][posInOffererArray] != offerHash)
             revert BEANOfferArrayPosMismatch();
 
-        offerHashesByBuyer[offer.offerer].swapPop(posInBuyersList);
+        offerHashesByBuyer[offer.offerer].swapPop(posInOffererArray);
         delete offers[offerHash];
 
         if (offer.escrowed && returnEscrow) {
-            if (offer.escrowed > totalInEscrow[offer.offerer])
+            if (offer.price > totalInEscrow[offer.offerer])
                 revert BEANEscrowAlreadyWithdrawn();
             _returnEscrow(offer.offerer, offer.price);
         }
@@ -409,7 +409,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
             "Only the owner of this NFT can accept an offer."
         );
         require(
-            collectionTradingEnabled[ca],
+            collectionTradingEnabled[offer.contractAddress],
             "Trading for this collection is not enabled."
         );
 
@@ -419,36 +419,37 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         if (offerHashesByBuyer[offer.offerer][posInOffererArray] != offerHash)
             revert BEANOfferArrayPosMismatch();
 
-        offerHashesByBuyer[offer.offerer].swapPop(posInBuyersList);
+        offerHashesByBuyer[offer.offerer].swapPop(posInOffererArray);
         delete offers[offerHash];
 
         // Actually perform trade
         address payable oldOwner = payable(address(msg.sender));
         address payable newOwner = payable(address(offer.offerer));
         if (offer.escrowed) {
-            escrowedPurchase(_nft, ca, tokenId, price, oldOwner, newOwner);
+            escrowedPurchase(_nft, offer.contractAddress, offer.tokenId, offer.price, oldOwner, newOwner);
         } else {
-            tokenPurchase(_nft, ca, tokenId, price, oldOwner, newOwner);
+            tokenPurchase(_nft, offer.contractAddress, offer.tokenId, offer.price, oldOwner, newOwner);
         }
     }
 
     // PUBLIC ESCROW FUNCTIONS
-    function addMoneyToEscrow() external payable nonReentrant {
-        require(
-            msg.value >= 10000000 gwei,
-            "Minimum escrow deposit is 0.01 MOVR."
-        );
-        totalEscrowedAmount += msg.value;
-        totalInEscrow[msg.sender] += msg.value;
-    }
+    //TODO: fix this
+    // function addMoneyToEscrow() external payable nonReentrant {
+    //     require(
+    //         msg.value >= 10000000 gwei,
+    //         "Minimum escrow deposit is 0.01 MOVR."
+    //     );
+    //     totalEscrowedAmount += msg.value;
+    //     totalInEscrow[msg.sender] += msg.value;
+    // }
 
-    function withdrawMoneyFromEscrow(uint256 amount) external nonReentrant {
-        require(
-            totalInEscrow[msg.sender] >= amount,
-            "Trying to withdraw more than deposited."
-        );
-        returnEscrowedFunds(msg.sender, amount);
-    }
+    // function withdrawMoneyFromEscrow(uint256 amount) external nonReentrant {
+    //     require(
+    //         totalInEscrow[msg.sender] >= amount,
+    //         "Trying to withdraw more than deposited."
+    //     );
+    //     returnEscrowedFunds(msg.sender, amount);
+    // }
 
     function getEscrowedAmount(address user) external view returns (uint256) {
         return totalInEscrow[user];
@@ -522,8 +523,8 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         TOKEN = _token;
     }
 
-    function clearAllListings(address ca, uint256 tokenId) external onlyAdmins {
-        delete listings[ca][tokenId];
+    function clearListing(bytes32 listingId) external onlyAdmins {
+        delete listings[listingId];
     }
 
     function setTrading(bool value) external onlyOwner {
@@ -667,33 +668,6 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         );
     }
 
-    function markOfferAsAccepted(
-        address ca,
-        uint256 tokenId,
-        uint256 i,
-        Offer storage offer
-    ) private {
-        Offer memory replaced = offer;
-        replaced.accepted = true;
-        offers[ca][tokenId][i] = replaced;
-    }
-
-    function returnEscrowedFunds(address user, uint256 price) private {
-        // Probably unnecessary
-        require(
-            totalEscrowedAmount >= price,
-            "Not enough funds to return escrow. Theoretically impossible."
-        );
-        require(
-            totalInEscrow[user] >= price,
-            "Not enough funds to return escrow. Theoretically impossible."
-        );
-        totalEscrowedAmount -= price;
-        totalInEscrow[user] -= price;
-        emit EscrowReturned(user, price);
-        payable(user).transfer(price);
-    }
-
     function escrowedPurchase(
         IERC721 _nft,
         address ca,
@@ -809,56 +783,56 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         }
     }
 
-    function _clearAllBids(address ca, uint256 tokenId) internal {
-        Offer[] storage _offers = _getOffers(ca, tokenId);
-        for (uint256 i = 0; i < _offers.length; ) {
-            if (_offers[i].accepted == false) {
-                if (_offers[i].escrowed)
-                    returnEscrowedFunds(_offers[i].buyer, _offers[i].price);
-                emit BidCancelled(
-                    ca,
-                    tokenId,
-                    _offers[i].price,
-                    _offers[i].buyer,
-                    _offers[i].escrowed,
-                    block.timestamp
-                );
-            }
-            unchecked {
-                i++;
-            }
-        }
-        delete offers[ca][tokenId];
-    }
+    // function _clearAllBids(address ca, uint256 tokenId) internal {
+    //     Offer[] storage _offers = _getOffers(ca, tokenId);
+    //     for (uint256 i = 0; i < _offers.length; ) {
+    //         if (_offers[i].accepted == false) {
+    //             if (_offers[i].escrowed)
+    //                 returnEscrowedFunds(_offers[i].buyer, _offers[i].price);
+    //             emit BidCancelled(
+    //                 ca,
+    //                 tokenId,
+    //                 _offers[i].price,
+    //                 _offers[i].buyer,
+    //                 _offers[i].escrowed,
+    //                 block.timestamp
+    //             );
+    //         }
+    //         unchecked {
+    //             i++;
+    //         }
+    //     }
+    //     delete offers[ca][tokenId];
+    // }
 
-    function _clearSomeBids(
-        address ca,
-        uint256 tokenId,
-        uint256 maxBidsToClear,
-        bool wipeEm
-    ) internal {
-        Offer[] storage _offers = _getOffers(ca, tokenId);
+    // function _clearSomeBids(
+    //     address ca,
+    //     uint256 tokenId,
+    //     uint256 maxBidsToClear,
+    //     bool wipeEm
+    // ) internal {
+    //     Offer[] storage _offers = _getOffers(ca, tokenId);
 
-        for (uint256 i = 0; i < maxBidsToClear; ) {
-            if (_offers[i].accepted == false) {
-                if (_offers[i].escrowed)
-                    returnEscrowedFunds(_offers[i].buyer, _offers[i].price);
-                emit BidCancelled(
-                    ca,
-                    tokenId,
-                    _offers[i].price,
-                    _offers[i].buyer,
-                    _offers[i].escrowed,
-                    block.timestamp
-                );
-            }
-            unchecked {
-                i++;
-            }
-        }
+    //     for (uint256 i = 0; i < maxBidsToClear; ) {
+    //         if (_offers[i].accepted == false) {
+    //             if (_offers[i].escrowed)
+    //                 returnEscrowedFunds(_offers[i].buyer, _offers[i].price);
+    //             emit BidCancelled(
+    //                 ca,
+    //                 tokenId,
+    //                 _offers[i].price,
+    //                 _offers[i].buyer,
+    //                 _offers[i].escrowed,
+    //                 block.timestamp
+    //             );
+    //         }
+    //         unchecked {
+    //             i++;
+    //         }
+    //     }
 
-        if (wipeEm) delete offers[ca][tokenId];
-    }
+    //     if (wipeEm) delete offers[ca][tokenId];
+    // }
 
     //View-only function for frontend filtering -- probably want to use this with .map() + wagmi's useContractReads()
     function isValidListing(address ca, uint256 tokenId)
