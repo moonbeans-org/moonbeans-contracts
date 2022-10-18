@@ -5,4 +5,9 @@ library BeanUtils {
         self[index] = self[self.length-1];
         self.pop();
     }
+
+    function swapPop(address[] storage self, uint256 index) internal {
+        self[index] = self[self.length-1];
+        self.pop();
+    }
 }

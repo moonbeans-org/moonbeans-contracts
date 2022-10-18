@@ -32,6 +32,7 @@ error BEANEscrowAlreadyWithdrawn();
 
 contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     using BeanUtils for bytes32[];
+    using BeanUtils for address[];
 
     event TokenListed(
         address indexed token,
@@ -108,14 +109,16 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         bool escrowed;
     }
 
-    mapping(bytes32 => Listing) listings;
-    mapping(address => bytes32[]) listingHashesByOfferer;
+    mapping(bytes32 => Listing) public listings;
+    mapping(address => bytes32[]) public listingsByLister;
+    mapping(bytes32 => uint256) posInListingsByLister;
 
     //This may not actually be necessary.
-    mapping(address => mapping(bytes32 => uint256)) posInListerArray;
+    mapping(address => bytes32[])public listingsByContract;
+    mapping(bytes32 => uint256) posInListingsByContract;
 
-    mapping(bytes32 => Offer) offers;
-    mapping(address => bytes32[]) offerHashesByBuyer;
+    mapping(bytes32 => Offer) public offers;
+    mapping(address => bytes32[]) public offerHashesByBuyer;
 
     //This may not actually be necessary.
     // mapping(address => mapping(bytes32 => uint256)) posInBuyerArray;
@@ -181,7 +184,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
                 ca,
                 tokenId,
                 msg.sender,
-                listingHashesByOfferer[msg.sender].length
+                listingsByLister[msg.sender].length
             )
         );
 
@@ -192,7 +195,8 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
             ca,
             msg.sender
         );
-        listingHashesByOfferer[msg.sender].push(listingHash);
+        listingsByLister[msg.sender].push(listingHash);
+        listingsByContract[ca].push(listingHash);
 
         emit TokenListed(
             ca,
@@ -244,6 +248,11 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
 
         //effects - remove listing
         delete listings[listingId];
+        //Cleanup accessory mappings. We pass the mapping results directly to the swapPop function to save memory height.
+        listingsByLister[oldOwner].swapPop(posInListingsByLister[listingId]);
+        listingsByContract[listing.contractAddress].swapPop(posInListingsByContract[listingId]);
+        delete posInListingsByLister[listingId];
+        delete posInListingsByContract[listingId];
 
         //Interaction - transfer NFT and process fees
         token.safeTransferFrom(oldOwner, msg.sender, listing.tokenId);
@@ -426,9 +435,9 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         address payable oldOwner = payable(address(msg.sender));
         address payable newOwner = payable(address(offer.offerer));
         if (offer.escrowed) {
-            escrowedPurchase(_nft, offer.contractAddress, offer.tokenId, offer.price, oldOwner, newOwner);
+            // escrowedPurchase(_nft, offer.contractAddress, offer.tokenId, offer.price, oldOwner, newOwner);
         } else {
-            tokenPurchase(_nft, offer.contractAddress, offer.tokenId, offer.price, oldOwner, newOwner);
+            // tokenPurchase(_nft, offer.contractAddress, offer.tokenId, offer.price, oldOwner, newOwner);
         }
     }
 
@@ -634,6 +643,14 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         payable(to).transfer(amount);
     }
 
+    function getListingsByLister(address lister) public view returns(bytes32[] memory) {
+        return listingsByLister[lister];
+    }
+
+    function getListingsByContract(address contractAddress) public view returns(bytes32[] memory) {
+        return listingsByContract[contractAddress];
+    }
+
     // PRIVATE HELPERS
     function calculateAmounts(address ca, uint256 amount)
         private
@@ -668,120 +685,120 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         );
     }
 
-    function escrowedPurchase(
-        IERC721 _nft,
-        address ca,
-        uint256 tokenId,
-        uint256 price,
-        address payable oldOwner,
-        address payable newOwner
-    ) private {
-        require(
-            totalInEscrow[newOwner] >= price,
-            "Buyer does not have enough money in escrow."
-        );
-        require(totalEscrowedAmount >= price, "Escrow balance too low.");
-        uint256 oldOwnerMovrBalance = oldOwner.balance;
+    // function escrowedPurchase(
+    //     IERC721 _nft,
+    //     address ca,
+    //     uint256 tokenId,
+    //     uint256 price,
+    //     address payable oldOwner,
+    //     address payable newOwner
+    // ) private {
+    //     require(
+    //         totalInEscrow[newOwner] >= price,
+    //         "Buyer does not have enough money in escrow."
+    //     );
+    //     require(totalEscrowedAmount >= price, "Escrow balance too low.");
+    //     uint256 oldOwnerMovrBalance = oldOwner.balance;
 
-        //calculate fees
-        (
-            uint256 devFeeAmount,
-            uint256 beanieHolderFeeAmount,
-            uint256 beanBuybackFeeAmount,
-            uint256 collectionOwnerFeeAmount,
-            uint256 remainder
-        ) = calculateAmounts(ca, price);
-        totalInEscrow[newOwner] -= price;
-        totalEscrowedAmount -= price;
+    //     //calculate fees
+    //     (
+    //         uint256 devFeeAmount,
+    //         uint256 beanieHolderFeeAmount,
+    //         uint256 beanBuybackFeeAmount,
+    //         uint256 collectionOwnerFeeAmount,
+    //         uint256 remainder
+    //     ) = calculateAmounts(ca, price);
+    //     totalInEscrow[newOwner] -= price;
+    //     totalEscrowedAmount -= price;
 
-        //swippity swappity
-        _nft.safeTransferFrom(oldOwner, newOwner, tokenId);
-        oldOwner.transfer(remainder);
+    //     //swippity swappity
+    //     _nft.safeTransferFrom(oldOwner, newOwner, tokenId);
+    //     oldOwner.transfer(remainder);
 
-        //check that all went swimmingly
-        require(
-            oldOwner.balance >= (oldOwnerMovrBalance + remainder),
-            "Funds were not successfully sent."
-        );
-        require(
-            _nft.ownerOf(tokenId) == newOwner,
-            "NFT was not successfully transferred."
-        );
-        emit TokenPurchased(oldOwner, newOwner, price, ca, tokenId);
+    //     //check that all went swimmingly
+    //     require(
+    //         oldOwner.balance >= (oldOwnerMovrBalance + remainder),
+    //         "Funds were not successfully sent."
+    //     );
+    //     require(
+    //         _nft.ownerOf(tokenId) == newOwner,
+    //         "NFT was not successfully transferred."
+    //     );
+    //     emit TokenPurchased(oldOwner, newOwner, price, ca, tokenId);
 
-        //fees
-        if (feesOn) {
-            _sendEth(collectionOwners[ca], collectionOwnerFeeAmount);
-            if (autoSendDevFees) {
-                _sendEth(devAddress, devFeeAmount);
-                _sendEth(beanieHolderAddress, beanieHolderFeeAmount);
-                _sendEth(beanBuybackAddress, beanBuybackFeeAmount);
-            } else {
-                accruedDevFees += devFeeAmount;
-                accruedBeanieFees += beanieHolderFeeAmount;
-                accruedBeanieBuyback += beanBuybackFeeAmount;
-            }
-        }
-    }
+    //     //fees
+    //     if (feesOn) {
+    //         _sendEth(collectionOwners[ca], collectionOwnerFeeAmount);
+    //         if (autoSendDevFees) {
+    //             _sendEth(devAddress, devFeeAmount);
+    //             _sendEth(beanieHolderAddress, beanieHolderFeeAmount);
+    //             _sendEth(beanBuybackAddress, beanBuybackFeeAmount);
+    //         } else {
+    //             accruedDevFees += devFeeAmount;
+    //             accruedBeanieFees += beanieHolderFeeAmount;
+    //             accruedBeanieBuyback += beanBuybackFeeAmount;
+    //         }
+    //     }
+    // }
 
-    function tokenPurchase(
-        IERC721 _nft,
-        address ca,
-        uint256 tokenId,
-        uint256 price,
-        address payable oldOwner,
-        address payable newOwner
-    ) private {
-        IERC20 _token = IERC20(TOKEN);
-        require(
-            _token.balanceOf(msg.sender) >= price,
-            "Buyer does not have enough money to purchase."
-        );
-        require(
-            _token.allowance(newOwner, address(this)) >= price,
-            "Marketplace not approved to spend buyer tokens."
-        );
-        (
-            uint256 devFeeAmount,
-            uint256 beanieHolderFeeAmount,
-            uint256 beanBuybackFeeAmount,
-            uint256 collectionOwnerFeeAmount,
-            uint256 remainder
-        ) = calculateAmounts(ca, price);
+    // function tokenPurchase(
+    //     IERC721 _nft,
+    //     address ca,
+    //     uint256 tokenId,
+    //     uint256 price,
+    //     address payable oldOwner,
+    //     address payable newOwner
+    // ) private {
+    //     IERC20 _token = IERC20(TOKEN);
+    //     require(
+    //         _token.balanceOf(msg.sender) >= price,
+    //         "Buyer does not have enough money to purchase."
+    //     );
+    //     require(
+    //         _token.allowance(newOwner, address(this)) >= price,
+    //         "Marketplace not approved to spend buyer tokens."
+    //     );
+    //     (
+    //         uint256 devFeeAmount,
+    //         uint256 beanieHolderFeeAmount,
+    //         uint256 beanBuybackFeeAmount,
+    //         uint256 collectionOwnerFeeAmount,
+    //         uint256 remainder
+    //     ) = calculateAmounts(ca, price);
 
-        _nft.safeTransferFrom(oldOwner, newOwner, tokenId);
-        _token.transferFrom(newOwner, oldOwner, remainder);
+    //     _nft.safeTransferFrom(oldOwner, newOwner, tokenId);
+    //     _token.transferFrom(newOwner, oldOwner, remainder);
 
-        require(
-            _token.balanceOf(oldOwner) >= remainder,
-            "Funds were not successfully sent."
-        );
-        require(
-            _nft.ownerOf(tokenId) == newOwner,
-            "NFT was not successfully transferred."
-        );
-        emit TokenPurchased(oldOwner, newOwner, price, ca, tokenId);
+    //     require(
+    //         _token.balanceOf(oldOwner) >= remainder,
+    //         "Funds were not successfully sent."
+    //     );
+    //     require(
+    //         _nft.ownerOf(tokenId) == newOwner,
+    //         "NFT was not successfully transferred."
+    //     );
+    //     emit TokenPurchased(oldOwner, newOwner, price, ca, tokenId);
 
-        //fees
-        if (feesOn) {
-            _token.transferFrom(
-                address(this),
-                collectionOwners[ca],
-                collectionOwnerFeeAmount
-            );
-            _token.transferFrom(address(this), devAddress, devFeeAmount);
-            _token.transferFrom(
-                address(this),
-                beanieHolderAddress,
-                beanieHolderFeeAmount
-            );
-            _token.transferFrom(
-                address(this),
-                beanBuybackAddress,
-                beanBuybackFeeAmount
-            );
-        }
-    }
+    //     //fees
+    //     if (feesOn) {
+    //         _token.transferFrom(
+    //             address(this),
+    //             collectionOwners[ca],
+    //             collectionOwnerFeeAmount
+    //         );
+    //         _token.transferFrom(address(this), devAddress, devFeeAmount);
+    //         _token.transferFrom(
+    //             address(this),
+    //             beanieHolderAddress,
+    //             beanieHolderFeeAmount
+    //         );
+    //         _token.transferFrom(
+    //             address(this),
+    //             beanBuybackAddress,
+    //             beanBuybackFeeAmount
+    //         );
+    //     }
+    // }
 
     // function _clearAllBids(address ca, uint256 tokenId) internal {
     //     Offer[] storage _offers = _getOffers(ca, tokenId);
@@ -835,14 +852,14 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     // }
 
     //View-only function for frontend filtering -- probably want to use this with .map() + wagmi's useContractReads()
-    function isValidListing(address ca, uint256 tokenId)
-        public
-        view
-        returns (bool isValid)
-    {
-        isValid = (listings[ca][tokenId].price != 0 &&
-            IERC721(ca).ownerOf(tokenId) == listings[ca][tokenId].lister);
-    }
+    // function isValidListing(address ca, uint256 tokenId)
+    //     public
+    //     view
+    //     returns (bool isValid)
+    // {
+    //     isValid = (listings[ca][tokenId].price != 0 &&
+    //         IERC721(ca).ownerOf(tokenId) == listings[ca][tokenId].lister);
+    // }
 
     function _sendEth(address _address, uint256 _amount) private {
         (bool success, ) = _address.call{value: _amount}("");
