@@ -10,6 +10,8 @@ import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "./BeanUtils.sol";
 
+import "hardhat/console.sol";
+
 error BEANOwnerNotApproved();
 error BEANNotAuthorized();
 error BEANListingNotActive();
@@ -98,6 +100,8 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         uint128 expiry;
         address contractAddress;
         address lister;
+        uint32 posInListingsByLister;
+        uint32 posInListingsByContract; 
     }
 
     struct Offer {
@@ -111,11 +115,11 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
 
     mapping(bytes32 => Listing) public listings;
     mapping(address => bytes32[]) public listingsByLister;
-    mapping(bytes32 => uint256) posInListingsByLister;
+    // mapping(bytes32 => uint256) posInListingsByLister;
 
     //This may not actually be necessary.
     mapping(address => bytes32[])public listingsByContract;
-    mapping(bytes32 => uint256) posInListingsByContract;
+    // mapping(bytes32 => uint256) posInListingsByContract;
 
     mapping(bytes32 => Offer) public offers;
     mapping(address => bytes32[]) public offerHashesByBuyer;
@@ -193,7 +197,9 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
             uint128(price),
             uint128(expiry),
             ca,
-            msg.sender
+            msg.sender,
+            uint32(listingsByLister[msg.sender].length),
+            uint32(listingsByContract[ca].length)
         );
         listingsByLister[msg.sender].push(listingHash);
         listingsByContract[ca].push(listingHash);
@@ -211,15 +217,21 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     // Tokens that have passed their expiry can also be delisted by anyone, following a gas token pattern.
     function delistToken(bytes32 listingId) public {
         Listing memory listing = listings[listingId];
+        address owner = IERC721(listing.contractAddress).ownerOf(listing.tokenId);
         //TODO: Fix negation here
         if (
-            !(msg.sender ==
-                IERC721(listing.contractAddress).ownerOf(listing.tokenId) ||
+            !(
+                msg.sender == owner ||
                 administrators[msg.sender] ||
                 listing.expiry > block.timestamp)
         ) revert BEANOwnerNotApproved();
 
+        //effects - remove listing
         delete listings[listingId];
+        //Cleanup accessory mappings. We pass the mapping results directly to the swapPop function to save memory height.
+        listingsByLister[owner].swapPop(listing.posInListingsByLister);
+        listingsByContract[listing.contractAddress].swapPop(listing.posInListingsByContract);
+
         emit TokenDelisted(
             listing.contractAddress,
             listing.tokenId,
@@ -228,7 +240,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     }
 
     // Allows a buyer to buy at the listed price.
-    function fulfillListing(bytes32 listingId) external payable nonReentrant {
+    function fulfillListing(bytes32 listingId, address to) external payable nonReentrant {
         if (tradingPaused) revert BEANTradingPaused();
         Listing memory listing = listings[listingId];
         require(
@@ -249,24 +261,22 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         //effects - remove listing
         delete listings[listingId];
         //Cleanup accessory mappings. We pass the mapping results directly to the swapPop function to save memory height.
-        listingsByLister[oldOwner].swapPop(posInListingsByLister[listingId]);
-        listingsByContract[listing.contractAddress].swapPop(posInListingsByContract[listingId]);
-        delete posInListingsByLister[listingId];
-        delete posInListingsByContract[listingId];
+        listingsByLister[oldOwner].swapPop(listing.posInListingsByLister);
+        listingsByContract[listing.contractAddress].swapPop(listing.posInListingsByContract);
 
         //Interaction - transfer NFT and process fees
-        token.safeTransferFrom(oldOwner, msg.sender, listing.tokenId);
+        token.safeTransferFrom(oldOwner, to, listing.tokenId);
         (
             uint256 devFeeAmount,
             uint256 beanieHolderFeeAmount,
             uint256 beanBuybackFeeAmount,
             uint256 collectionOwnerFeeAmount,
-            uint256 remainder
+            uint256 saleNetFees
         ) = calculateAmounts(listing.contractAddress, listing.price);
-        _sendEth(oldOwner, remainder);
+        _sendEth(oldOwner, saleNetFees);
         //Check that all went swimmingly
         require(
-            token.ownerOf(listing.tokenId) == msg.sender,
+            token.ownerOf(listing.tokenId) == to,
             "NFT was not successfully transferred."
         );
 
