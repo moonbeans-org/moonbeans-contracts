@@ -27,10 +27,17 @@ error BEANContractNotApproved();
 error BEANUserTokensLow();
 error BEANOfferArrayPosMismatch();
 error BEANNoCancellableOffer();
-error BEANEscrowAlreadyWithdrawn();
 error BEANCallerNotOwner();
+error BEANNotEnoughInEscrow();
 
-//TODO: Make autosend dev fees a flag
+//Escrow
+error BEANEscrowOverWithdraw();
+error BEANZeroInEscrow();
+
+/*
+    TODO questions:
+    Deprecate totalEscrowedAmount? Not necessary providing per-account escrow is robust.
+*/
 
 //Anyone can delist nfts that are not approved or have passed expiry
 
@@ -380,10 +387,8 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         // require(msg.sender != IERC721(ca).ownerOf(tokenId), "Can not bid on your own NFT.");
         if (price == 0)
             revert BEANZeroPrice();
-        require(
-            msg.value == price,
-            "The buyer did not send enough money for an escrowed offer."
-        );
+        if (totalInEscrow[msg.sender] < price)
+            revert BEANNotEnoughInEscrow();
         totalEscrowedAmount += msg.value;
         totalInEscrow[msg.sender] += msg.value;
         bytes32 offerHash = computeOfferHash(ca, msg.sender, tokenId);
@@ -412,7 +417,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
 
         if (offer.escrowed && returnEscrow) {
             if (offer.price > totalInEscrow[offer.offerer])
-                revert BEANEscrowAlreadyWithdrawn();
+                revert BEANEscrowOverWithdraw();
             _returnEscrow(offer.offerer, offer.price);
         }
     }
@@ -451,7 +456,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         address payable oldOwner = payable(address(msg.sender));
         address payable newOwner = payable(address(offer.offerer));
         if (offer.escrowed) {
-            // escrowedPurchase(_nft, offer.contractAddress, offer.tokenId, offer.price, oldOwner, newOwner);
+            escrowedPurchase(_nft, offer.contractAddress, offer.tokenId, offer.price, oldOwner, newOwner);
         } else {
             tokenPurchase(_nft, offer.contractAddress, offer.tokenId, offer.price, oldOwner, newOwner);
         }
@@ -460,22 +465,18 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
 
     // PUBLIC ESCROW FUNCTIONS
     //TODO: fix this
-    // function addMoneyToEscrow() external payable nonReentrant {
-    //     require(
-    //         msg.value >= 10000000 gwei,
-    //         "Minimum escrow deposit is 0.01 MOVR."
-    //     );
-    //     totalEscrowedAmount += msg.value;
-    //     totalInEscrow[msg.sender] += msg.value;
-    // }
+    function addFundsToEscrow() external payable nonReentrant {
+        totalEscrowedAmount += msg.value;
+        totalInEscrow[msg.sender] += msg.value;
+    }
 
-    // function withdrawMoneyFromEscrow(uint256 amount) external nonReentrant {
-    //     require(
-    //         totalInEscrow[msg.sender] >= amount,
-    //         "Trying to withdraw more than deposited."
-    //     );
-    //     returnEscrowedFunds(msg.sender, amount);
-    // }
+    function withdrawFundsFromEscrow(uint256 amount) external nonReentrant {
+        if (totalInEscrow[msg.sender] == 0)
+            revert BEANZeroInEscrow();
+        if (totalInEscrow[msg.sender] < amount)
+            revert BEANEscrowOverWithdraw();
+        _returnEscrow(msg.sender, amount);
+    }
 
     function getEscrowedAmount(address user) external view returns (uint256) {
         return totalInEscrow[user];
@@ -732,61 +733,46 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         );
     }
 
-    // function escrowedPurchase(
-    //     IERC721 _nft,
-    //     address ca,
-    //     uint256 tokenId,
-    //     uint256 price,
-    //     address payable oldOwner,
-    //     address payable newOwner
-    // ) private {
-    //     require(
-    //         totalInEscrow[newOwner] >= price,
-    //         "Buyer does not have enough money in escrow."
-    //     );
-    //     require(totalEscrowedAmount >= price, "Escrow balance too low.");
-    //     uint256 oldOwnerMovrBalance = oldOwner.balance;
+    function escrowedPurchase(
+        IERC721 _nft,
+        address ca,
+        uint256 tokenId,
+        uint256 price,
+        address payable oldOwner,
+        address payable newOwner
+    ) private nonReentrant {
+        require(
+            totalInEscrow[newOwner] >= price,
+            "Buyer does not have enough money in escrow."
+        );
+        require(totalEscrowedAmount >= price, "Escrow balance too low.");
+        //calculate fees
+        (
+            uint256 devFeeAmount,
+            uint256 beanieHolderFeeAmount,
+            uint256 beanBuybackFeeAmount,
+            uint256 collectionOwnerFeeAmount,
+            uint256 remainder
+        ) = calculateAmounts(ca, price);
 
-    //     //calculate fees
-    //     (
-    //         uint256 devFeeAmount,
-    //         uint256 beanieHolderFeeAmount,
-    //         uint256 beanBuybackFeeAmount,
-    //         uint256 collectionOwnerFeeAmount,
-    //         uint256 remainder
-    //     ) = calculateAmounts(ca, price);
-    //     totalInEscrow[newOwner] -= price;
-    //     totalEscrowedAmount -= price;
+        //update escrow amounts
+        totalInEscrow[newOwner] -= price;
+        totalEscrowedAmount -= price;
 
-    //     //swippity swappity
-    //     _nft.safeTransferFrom(oldOwner, newOwner, tokenId);
-    //     oldOwner.transfer(remainder);
+        //swippity swappity
+        _nft.safeTransferFrom(oldOwner, newOwner, tokenId);
+        _sendEth(oldOwner, remainder);
 
-    //     //check that all went swimmingly
-    //     require(
-    //         oldOwner.balance >= (oldOwnerMovrBalance + remainder),
-    //         "Funds were not successfully sent."
-    //     );
-    //     require(
-    //         _nft.ownerOf(tokenId) == newOwner,
-    //         "NFT was not successfully transferred."
-    //     );
-    //     emit TokenPurchased(oldOwner, newOwner, price, ca, tokenId);
-
-    //     //fees
-    //     if (feesOn) {
-    //         _sendEth(collectionOwners[ca], collectionOwnerFeeAmount);
-    //         if (autoSendDevFees) {
-    //             _sendEth(devAddress, devFeeAmount);
-    //             _sendEth(beanieHolderAddress, beanieHolderFeeAmount);
-    //             _sendEth(beanBuybackAddress, beanBuybackFeeAmount);
-    //         } else {
-    //             accruedDevFees += devFeeAmount;
-    //             accruedBeanieFees += beanieHolderFeeAmount;
-    //             accruedBeanieBuyback += beanBuybackFeeAmount;
-    //         }
-    //     }
-    // }
+        //fees
+        if (feesOn) {
+            _sendEth(collectionOwners[ca], collectionOwnerFeeAmount);
+            if (autoSendDevFees) {
+                _processDevFeesEth(devFeeAmount, beanieHolderFeeAmount, beanBuybackFeeAmount);
+            } else {
+                _accrueDevFeesEth(devFeeAmount, beanieHolderFeeAmount, beanBuybackFeeAmount);
+            }
+        }
+    }
 
     //FIXME: what do we do without feesOn
     function tokenPurchase(
