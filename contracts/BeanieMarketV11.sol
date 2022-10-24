@@ -325,7 +325,6 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         uint256 price,
         uint256 expiry
     ) public payable {
-
         //FIXME: Can probably remove this. Trivial workaround having a second wallet.
         // require(msg.sender != IERC721(ca).ownerOf(tokenId), "Can not bid on your own NFT.");
         if (price == 0)
@@ -336,6 +335,29 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
             revert BEANUserTokensLow();
         bytes32 offerHash = computeOfferHash(ca, msg.sender, tokenId);
         _storeOffer(offerHash, ca, msg.sender, tokenId, price, expiry, false);
+        emit OfferPlaced(ca, tokenId, price, expiry, msg.sender, offerHash);
+    }
+
+    // Make an escrowed offer (checks balance of bidder, then holds the bid in the contract as an escrow).
+    function makeEscrowedOffer(
+        address ca,
+        uint256 tokenId,
+        uint256 price,
+        uint256 expiry
+    ) public payable nonReentrant {
+        //FIXME: Can probably remove this. Trivial workaround having a second wallet.
+        // require(msg.sender != IERC721(ca).ownerOf(tokenId), "Can not bid on your own NFT.");
+        if (price == 0)
+            revert BEANZeroPrice();
+        if ((totalInEscrow[msg.sender] + msg.value) < price)
+            revert BEANNotEnoughInEscrow();
+
+        totalEscrowedAmount += msg.value;
+        totalInEscrow[msg.sender] += msg.value;
+        
+        bytes32 offerHash = computeOfferHash(ca, msg.sender, tokenId);
+        _storeOffer(offerHash, ca, msg.sender, tokenId, price, expiry, true);
+
         emit OfferPlaced(ca, tokenId, price, expiry, msg.sender, offerHash);
     }
 
@@ -374,27 +396,6 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
             escrowed
         );
         offerHashesByBuyer[user].push(offerHash);
-    }
-
-    // Make an escrowed offer (checks balance of bidder, then holds the bid in the contract as an escrow).
-    function makeEscrowedOffer(
-        address ca,
-        uint256 tokenId,
-        uint256 price,
-        uint256 expiry
-    ) public payable nonReentrant {
-        //FIXME: Can probably remove this. Trivial workaround having a second wallet.
-        // require(msg.sender != IERC721(ca).ownerOf(tokenId), "Can not bid on your own NFT.");
-        if (price == 0)
-            revert BEANZeroPrice();
-        if (totalInEscrow[msg.sender] < price)
-            revert BEANNotEnoughInEscrow();
-        totalEscrowedAmount += msg.value;
-        totalInEscrow[msg.sender] += msg.value;
-        bytes32 offerHash = computeOfferHash(ca, msg.sender, tokenId);
-        _storeOffer(offerHash, ca, msg.sender, tokenId, price, expiry, true);
-
-        emit OfferPlaced(ca, tokenId, price, expiry, msg.sender, offerHash);
     }
 
     // Cancel an offer (escrowed or not). Could have gas issues if there's too many offers...

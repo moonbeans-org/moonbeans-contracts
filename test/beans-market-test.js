@@ -85,6 +85,45 @@ describe("Beanie Market", function () {
     return { beanieMarket, dummyNFT, paymentToken, owner, addrs, now, offerHashes };
   }
 
+  async function deployMarketAndMakeEscrowOffersFixture() {
+    const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndNFTFixture);
+
+    await dummyNFT.connect(addrs[0]).setApprovalForAll(beanieMarket.address, true);
+    await dummyNFT.connect(addrs[1]).setApprovalForAll(beanieMarket.address, true);
+
+    await beanieMarket.connect(owner).setCollectionTrading(dummyNFT.address, true);
+
+    await paymentToken.connect(addrs[2]).approve(beanieMarket.address, ONE_ETH.mul(10));
+
+    let offerHashes = [];
+    offerHashes.push(await beanieMarket.computeOfferHash(dummyNFT.address, addrs[2].address, 1))
+    await beanieMarket.connect(addrs[2]).makeEscrowedOffer(
+      dummyNFT.address,
+      1,
+      ONE_ETH,
+      now + 100,
+      {value: ONE_ETH}
+    );
+    offerHashes.push(await beanieMarket.computeOfferHash(dummyNFT.address, addrs[2].address, 2))
+    await beanieMarket.connect(addrs[2]).makeEscrowedOffer(
+      dummyNFT.address,
+      2,
+      ONE_ETH.mul(2),
+      now + 100,
+      {value: ONE_ETH.mul(2)}
+    );
+    offerHashes.push(await beanieMarket.computeOfferHash(dummyNFT.address, addrs[2].address, 3))
+    await beanieMarket.connect(addrs[2]).makeEscrowedOffer(
+      dummyNFT.address,
+      3,
+      ONE_ETH.mul(3),
+      now + 100,
+      {value: ONE_ETH.mul(3)}
+    );
+
+    return { beanieMarket, dummyNFT, paymentToken, owner, addrs, now, offerHashes };
+  }
+
   describe("Deployment", function () {
     it("Deployment", async function () {
       const { beanieMarket, dummyNFT, owner, addrs } = await loadFixture(deployMarketAndNFTFixture);
@@ -233,6 +272,7 @@ describe("Beanie Market", function () {
           ethers.BigNumber.from(now+100),
           dummyNFT.address,
           addrs[2].address,
+          0,
           false
         ]
       )
@@ -243,6 +283,7 @@ describe("Beanie Market", function () {
           ethers.BigNumber.from(now+100),
           dummyNFT.address,
           addrs[2].address,
+          1,
           false
         ]
       )
@@ -253,6 +294,7 @@ describe("Beanie Market", function () {
           ethers.BigNumber.from(now+100),
           dummyNFT.address,
           addrs[2].address,
+          2,
           false
         ]
       )
