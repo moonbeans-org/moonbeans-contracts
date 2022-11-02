@@ -300,12 +300,13 @@ describe("Beanie Market", function () {
       )
     });
 
-    it("Fulfill offer", async function () {
+    it("Fulfill non-escrow offer", async function () {
       const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now, offerHashes } = await loadFixture(deployMarketAndMakeOffersFixture);
 
     });
 
-    it("Cancel offer", async function () {
+    it("Cancel non-escrow offer", async function () {
+      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now, offerHashes } = await loadFixture(deployMarketAndMakeOffersFixture);
 
     });
   });
