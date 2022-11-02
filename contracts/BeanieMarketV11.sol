@@ -50,12 +50,14 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         uint256 indexed id,
         uint256 indexed price,
         uint256 expiry,
-        bytes32 listingHash
+        bytes32 listingHash,
+        uint256 timestamp
     );
     event TokenDelisted(
         address indexed token,
         uint256 indexed id,
-        bytes32 listingHash
+        bytes32 listingHash,
+        uint256 timestamp
     );
     event TokenPurchased(
         address indexed oldOwner,
@@ -63,7 +65,8 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         uint256 indexed price,
         address collection,
         uint256 tokenId,
-        bytes32 listingHash
+        bytes32 listingHash,
+        uint256 timestamp
     );
     event OfferPlaced(
         address indexed token,
@@ -71,7 +74,8 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         uint256 indexed price,
         uint256 expiry,
         address buyer,
-        bytes32 offerHash
+        bytes32 offerHash,
+        uint256 timestamp
     );
     event OfferCancelled(
         address indexed token,
@@ -79,15 +83,15 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         uint256 indexed price,
         uint256 expiry,
         address buyer,
-        bytes32 offerHash
+        bytes32 offerHash,
+        uint256 timestamp
     );
     event EscrowReturned(address indexed user, uint256 indexed price);
 
-    // FIXME: change this to bips
-    // Fees are out of 1000, to theoretically allow for 0.1 - 0.9% fees in the future.
-    uint256 public devFee = 10; //1%
-    uint256 public beanieHolderFee = 10; //1%
-    uint256 public beanBuybackFee = 10; //1%
+    // Fees are out of 10000, to allow for 0.01 - 9.99% fees.
+    uint256 public devFee = 100; //1%
+    uint256 public beanieHolderFee = 100; //1%
+    uint256 public beanBuybackFee = 100; //1%
     uint256 public defaultCollectionOwnerFee = 0; //0%
     uint256 public totalEscrowedAmount = 0;
     uint256 public specialTaxGas = 100000;
@@ -194,7 +198,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         require(price != 0, "Cannot set price to 0.");
         require(
             token.isApprovedForAll(msg.sender, address(this)),
-            "Marketplace not approved to handle this users tokens."
+            "Marketplace not approved to handle this user's tokens."
         );
 
         //We reference listingHashesByOfferer as a form of nonced execution.
@@ -226,12 +230,14 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
             tokenId,
             price,
             expiry,
-            listingHash
+            listingHash,
+            block.timestamp
         );
     }
 
     // Public wrapper around token delisting, requiring ownership to delist.
     // Tokens that have passed their expiry can also be delisted by anyone, following a gas token pattern.
+    // TODO: can we make this non-indexer dependenet?
     function delistToken(bytes32 listingId) public {
         Listing memory listing = listings[listingId];
         address owner = IERC721(listing.contractAddress).ownerOf(listing.tokenId);
@@ -252,7 +258,8 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         emit TokenDelisted(
             listing.contractAddress,
             listing.tokenId,
-            listingId
+            listingId,
+            block.timestamp
         );
     }
 
@@ -312,7 +319,8 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
             listing.price,
             listing.contractAddress,
             listing.tokenId,
-            listingId
+            listingId,
+            block.timestamp
         );
     }
 
@@ -335,7 +343,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
             revert BEANUserTokensLow();
         bytes32 offerHash = computeOfferHash(ca, msg.sender, tokenId);
         _storeOffer(offerHash, ca, msg.sender, tokenId, price, expiry, false);
-        emit OfferPlaced(ca, tokenId, price, expiry, msg.sender, offerHash);
+        emit OfferPlaced(ca, tokenId, price, expiry, msg.sender, offerHash, block.timestamp);
     }
 
     // Make an escrowed offer (checks balance of bidder, then holds the bid in the contract as an escrow).
@@ -358,7 +366,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         bytes32 offerHash = computeOfferHash(ca, msg.sender, tokenId);
         _storeOffer(offerHash, ca, msg.sender, tokenId, price, expiry, true);
 
-        emit OfferPlaced(ca, tokenId, price, expiry, msg.sender, offerHash);
+        emit OfferPlaced(ca, tokenId, price, expiry, msg.sender, offerHash, block.timestamp);
     }
 
     function computeOfferHash(
@@ -461,7 +469,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         } else {
             tokenPurchase(_nft, offer.contractAddress, offer.tokenId, offer.price, oldOwner, newOwner);
         }
-        emit TokenPurchased(oldOwner, newOwner, offer.price, offer.contractAddress, offer.tokenId, offerHash);
+        emit TokenPurchased(oldOwner, newOwner, offer.price, offer.contractAddress, offer.tokenId, offerHash, block.timestamp);
     }
 
     // PUBLIC ESCROW FUNCTIONS
@@ -604,17 +612,17 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     }
 
     function setDevFee(uint256 fee) external onlyOwner {
-        require(fee <= 100, "Max 10% fee");
+        require(fee <= 1000, "Max 10% fee");
         devFee = fee;
     }
 
     function setBeanieHolderFee(uint256 fee) external onlyOwner {
-        require(fee <= 100, "Max 10% fee");
+        require(fee <= 1000, "Max 10% fee");
         beanieHolderFee = fee;
     }
 
     function setBeanBuyBackFee(uint256 fee) external onlyOwner {
-        require(fee <= 100, "Max 10% fee");
+        require(fee <= 1000, "Max 10% fee");
         beanBuybackFee = fee;
     }
 
@@ -622,12 +630,12 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         bool verifiedCollectionOwner = collectionOwnersCanSetRoyalties &&
             (_msgSender() == collectionOwners[ca]);
         require(_msgSender() == owner() || verifiedCollectionOwner);
-        require(fee <= 100, "Max 10% fee");
+        require(fee <= 1000, "Max 10% fee");
         collectionOwnerFees[ca] = fee;
     }
 
     function setDefaultCollectionOwnerFee(uint256 fee) external onlyOwner {
-        require(fee <= 100, "Max 10% fee");
+        require(fee <= 1000, "Max 10% fee");
         defaultCollectionOwnerFee = fee;
     }
 
@@ -715,11 +723,11 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         uint256 _collectionOwnerFee = collectionOwnerFees[ca] == 0
             ? defaultCollectionOwnerFee
             : collectionOwnerFees[ca];
-        uint256 devFeeAmount = (amount * devFee) / 1000;
-        uint256 beanieHolderFeeAmount = (amount * beanieHolderFee) / 1000;
-        uint256 beanBuybackFeeAmount = (amount * beanBuybackFee) / 1000;
+        uint256 devFeeAmount = (amount * devFee) / 10000;
+        uint256 beanieHolderFeeAmount = (amount * beanieHolderFee) / 10000;
+        uint256 beanBuybackFeeAmount = (amount * beanBuybackFee) / 10000;
         uint256 collectionOwnerFeeAmount = (amount * _collectionOwnerFee) /
-            1000;
+            10000;
         uint256 remainder = amount -
             (devFeeAmount +
                 beanieHolderFeeAmount +
