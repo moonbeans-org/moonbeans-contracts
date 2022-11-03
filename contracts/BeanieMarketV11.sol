@@ -102,7 +102,6 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     uint256 public accruedAdminFeesEth;
     uint256 public accruedAdminFees;
 
-
     address public TOKEN = 0xAcc15dC74880C9944775448304B263D191c6077F; //WGLMR
     address public devAddress = 0x24312a0b911fE2199fbea92efab55e2ECCeC637D;
     address public beanieHolderAddress =
@@ -147,7 +146,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     bool public tradingPaused = false;
     bool public useSuperGasTaxes = false;
     bool public feesOn = true;
-    bool public autoSendDevFees = false;
+    bool public autoSendFees = false;
     bool public delistAfterAcceptingOffer = true;
     bool public clearBidsAfterAcceptingOffer = false;
     bool public clearBidsAfterFulfillingListing = false;
@@ -303,7 +302,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
             ) = calculateAmounts(listing.contractAddress, listing.price);
             _sendEth(oldOwner, saleNetFees);
             _sendEth( collectionOwners[listing.contractAddress], collectionOwnerFeeAmount);
-            if (autoSendDevFees) {
+            if (autoSendFees) {
                 _processDevFeesEth(devFeeAmount, beanieHolderFeeAmount, beanBuybackFeeAmount);
             } else {
                 _accrueDevFeesEth(devFeeAmount, beanieHolderFeeAmount, beanBuybackFeeAmount);
@@ -658,6 +657,10 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         feesOn = _value;
     }
 
+    function setAutoSendFees(bool _value) external onlyOwner {
+        autoSendFees = _value;
+    }
+
     function setDelistAfterAcceptingOffer(bool _value) external onlyOwner {
         delistAfterAcceptingOffer = _value;
     }
@@ -774,7 +777,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
             ) = calculateAmounts(ca, price);
             _sendEth(oldOwner, remainder);
             _sendEth(collectionOwners[ca], collectionOwnerFeeAmount);
-            if (autoSendDevFees) {
+            if (autoSendFees) {
                 _processDevFeesEth(devFeeAmount, beanieHolderFeeAmount, beanBuybackFeeAmount);
             } else {
                 _accrueDevFeesEth(devFeeAmount, beanieHolderFeeAmount, beanBuybackFeeAmount);
@@ -806,7 +809,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
             ) = calculateAmounts(ca, price);
             _token.transferFrom(newOwner, oldOwner, priceNetFees);
             _token.transferFrom(newOwner, collectionOwners[ca], collectionOwnerFeeAmount);
-            if (autoSendDevFees) {
+            if (autoSendFees) {
                 _processDevFees(newOwner, devFeeAmount, beanieHolderFeeAmount, beanBuybackFeeAmount);
             } else {
                 _accrueDevFees(newOwner, devFeeAmount, beanieHolderFeeAmount, beanBuybackFeeAmount);
