@@ -290,28 +290,27 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
 
         //Interaction - transfer NFT and process fees
         token.safeTransferFrom(oldOwner, to, listing.tokenId);
-        (
-            uint256 devFeeAmount,
-            uint256 beanieHolderFeeAmount,
-            uint256 beanBuybackFeeAmount,
-            uint256 collectionOwnerFeeAmount,
-            uint256 saleNetFees
-        ) = calculateAmounts(listing.contractAddress, listing.price);
-        _sendEth(oldOwner, saleNetFees);
-        //Check that all went swimmingly
-        // require(
-        //     token.ownerOf(listing.tokenId) == to,
-        //     "NFT was not successfully transferred."
-        // );
 
         //fees
+        //FIXME: Nested ifs kind of suck, see if I can linearize this
         if (feesOn) {
+            (
+                uint256 devFeeAmount,
+                uint256 beanieHolderFeeAmount,
+                uint256 beanBuybackFeeAmount,
+                uint256 collectionOwnerFeeAmount,
+                uint256 saleNetFees
+            ) = calculateAmounts(listing.contractAddress, listing.price);
+            _sendEth(oldOwner, saleNetFees);
             _sendEth( collectionOwners[listing.contractAddress], collectionOwnerFeeAmount);
             if (autoSendDevFees) {
                 _processDevFeesEth(devFeeAmount, beanieHolderFeeAmount, beanBuybackFeeAmount);
             } else {
                 _accrueDevFeesEth(devFeeAmount, beanieHolderFeeAmount, beanBuybackFeeAmount);
             }
+        }
+        else {
+            _sendEth(oldOwner, listing.price);
         }
         emit TokenPurchased(
             oldOwner,
@@ -755,14 +754,6 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
             "Buyer does not have enough money in escrow."
         );
         require(totalEscrowedAmount >= price, "Escrow balance too low.");
-        //calculate fees
-        (
-            uint256 devFeeAmount,
-            uint256 beanieHolderFeeAmount,
-            uint256 beanBuybackFeeAmount,
-            uint256 collectionOwnerFeeAmount,
-            uint256 remainder
-        ) = calculateAmounts(ca, price);
 
         //update escrow amounts
         totalInEscrow[newOwner] -= price;
@@ -770,16 +761,26 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
 
         //swippity swappity
         _nft.safeTransferFrom(oldOwner, newOwner, tokenId);
-        _sendEth(oldOwner, remainder);
 
         //fees
         if (feesOn) {
+            //calculate fees
+            (
+                uint256 devFeeAmount,
+                uint256 beanieHolderFeeAmount,
+                uint256 beanBuybackFeeAmount,
+                uint256 collectionOwnerFeeAmount,
+                uint256 remainder
+            ) = calculateAmounts(ca, price);
+            _sendEth(oldOwner, remainder);
             _sendEth(collectionOwners[ca], collectionOwnerFeeAmount);
             if (autoSendDevFees) {
                 _processDevFeesEth(devFeeAmount, beanieHolderFeeAmount, beanBuybackFeeAmount);
             } else {
                 _accrueDevFeesEth(devFeeAmount, beanieHolderFeeAmount, beanBuybackFeeAmount);
             }
+        } else {
+            _sendEth(oldOwner, price);
         }
     }
 
@@ -793,28 +794,25 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         address payable newOwner
     ) private {
         IERC20 _token = IERC20(TOKEN);
-        (
-            uint256 devFeeAmount,
-            uint256 beanieHolderFeeAmount,
-            uint256 beanBuybackFeeAmount,
-            uint256 collectionOwnerFeeAmount,
-            uint256 priceNetFees
-        ) = calculateAmounts(ca, price);
-
-        _token.transferFrom(newOwner, oldOwner, priceNetFees);
         _nft.safeTransferFrom(oldOwner, newOwner, tokenId);
         //fees
         if (feesOn) {
-            _token.transferFrom(
-                address(this),
-                collectionOwners[ca],
-                collectionOwnerFeeAmount
-            );
+            (
+                uint256 devFeeAmount,
+                uint256 beanieHolderFeeAmount,
+                uint256 beanBuybackFeeAmount,
+                uint256 collectionOwnerFeeAmount,
+                uint256 priceNetFees
+            ) = calculateAmounts(ca, price);
+            _token.transferFrom(newOwner, oldOwner, priceNetFees);
+            _token.transferFrom(newOwner, collectionOwners[ca], collectionOwnerFeeAmount);
             if (autoSendDevFees) {
                 _processDevFees(newOwner, devFeeAmount, beanieHolderFeeAmount, beanBuybackFeeAmount);
             } else {
                 _accrueDevFees(newOwner, devFeeAmount, beanieHolderFeeAmount, beanBuybackFeeAmount);
             }
+        } else {
+            _token.transferFrom(newOwner, oldOwner, price);
         }
     }
 

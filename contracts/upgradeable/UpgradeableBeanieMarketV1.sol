@@ -3,14 +3,15 @@
 pragma solidity ^0.8.4;
 // SPDX-License-Identifier: MIT
 
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
-import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "./BeanUtils.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC721/IERC721Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC721/IERC721ReceiverUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol"; 
+import "../BeanUtils.sol";
 
-import "hardhat/console.sol";
+// import "hardhat/console.sol";
 
 error BEANOwnerNotApproved();
 error BEANNotAuthorized();
@@ -41,7 +42,7 @@ error BEANZeroInEscrow();
 
 //Anyone can delist nfts that are not approved or have passed expiry
 
-contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
+contract BeanieMarketV11 is IERC721ReceiverUpgradeable, ReentrancyGuardUpgradeable, OwnableUpgradeable {
     using BeanUtils for bytes32[];
     using BeanUtils for address[];
 
@@ -89,15 +90,10 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     uint256 public beanieHolderFee = 10; //1%
     uint256 public beanBuybackFee = 10; //1%
     uint256 public defaultCollectionOwnerFee = 0; //0%
-    uint256 public totalEscrowedAmount = 0;
-    uint256 public specialTaxGas = 100000;
 
-    // uint256 public accruedDevFees;
-    // uint256 public accruedBeanieFees;
-    // uint256 public accruedBeanieBuyback;
     uint256 public accruedAdminFeesEth;
     uint256 public accruedAdminFees;
-
+    uint256 public totalEscrowedAmount;
 
     address public TOKEN = 0xAcc15dC74880C9944775448304B263D191c6077F; //WGLMR
     address public devAddress = 0x24312a0b911fE2199fbea92efab55e2ECCeC637D;
@@ -162,8 +158,8 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         _;
     }
 
-    constructor(address _TOKEN) {
-        TOKEN = _TOKEN;
+    function initialize() public initializer {
+        
     }
 
     // Required in order to receive ERC 721's.
@@ -185,7 +181,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         uint256 price,
         uint256 expiry
     ) public {
-        IERC721 token = IERC721(ca);
+        IERC721Upgradeable token = IERC721Upgradeable(ca);
         //FIXME: Is this necessary if contract has isApprovedForAll, since isApprovedForAll is called in context of msg.sender?
         require(
             msg.sender == token.ownerOf(tokenId),
@@ -234,7 +230,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     // Tokens that have passed their expiry can also be delisted by anyone, following a gas token pattern.
     function delistToken(bytes32 listingId) public {
         Listing memory listing = listings[listingId];
-        address owner = IERC721(listing.contractAddress).ownerOf(listing.tokenId);
+        address owner = IERC721Upgradeable(listing.contractAddress).ownerOf(listing.tokenId);
         //TODO: Fix negation here
         if (
             !(
@@ -273,7 +269,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         //get current NFT owner, verify approval
         address oldOwner = listing.lister;
         //TODO: possible gas savings by reducing memory height
-        IERC721 token = IERC721(listing.contractAddress);
+        IERC721Upgradeable token = IERC721Upgradeable(listing.contractAddress);
 
         //effects - remove listing
         delete listings[listingId];
@@ -326,12 +322,12 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         uint256 expiry
     ) public payable {
         //FIXME: Can probably remove this. Trivial workaround having a second wallet.
-        // require(msg.sender != IERC721(ca).ownerOf(tokenId), "Can not bid on your own NFT.");
+        // require(msg.sender != IERC721Upgradeable(ca).ownerOf(tokenId), "Can not bid on your own NFT.");
         if (price == 0)
             revert BEANZeroPrice();
-        if (IERC20(TOKEN).allowance(msg.sender, address(this)) < price)
+        if (IERC20Upgradeable(TOKEN).allowance(msg.sender, address(this)) < price)
             revert BEANContractNotApproved();
-        if (IERC20(TOKEN).balanceOf(msg.sender) < price)
+        if (IERC20Upgradeable(TOKEN).balanceOf(msg.sender) < price)
             revert BEANUserTokensLow();
         bytes32 offerHash = computeOfferHash(ca, msg.sender, tokenId);
         _storeOffer(offerHash, ca, msg.sender, tokenId, price, expiry, false);
@@ -346,7 +342,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         uint256 expiry
     ) public payable nonReentrant {
         //FIXME: Can probably remove this. Trivial workaround having a second wallet.
-        // require(msg.sender != IERC721(ca).ownerOf(tokenId), "Can not bid on your own NFT.");
+        // require(msg.sender != IERC721Upgradeable(ca).ownerOf(tokenId), "Can not bid on your own NFT.");
         if (price == 0)
             revert BEANZeroPrice();
         if ((totalInEscrow[msg.sender] + msg.value) < price)
@@ -438,7 +434,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
 
         Offer memory offer = offers[offerHash];
 
-        IERC721 _nft = IERC721(offer.contractAddress);
+        IERC721Upgradeable _nft = IERC721Upgradeable(offer.contractAddress);
         if(msg.sender != _nft.ownerOf(offer.tokenId))
             revert BEANCallerNotOwner();
         require(
@@ -519,9 +515,9 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         uint256 beanieHolderAmount,
         uint256 beanieBuybackAmount
     ) private {
-        IERC20(TOKEN).transferFrom(from, devAddress, devAmount);
-        IERC20(TOKEN).transferFrom(from, beanieHolderAddress, beanieHolderAmount);
-        IERC20(TOKEN).transferFrom(from, beanBuybackAddress, beanieBuybackAmount);
+        IERC20Upgradeable(TOKEN).transferFrom(from, devAddress, devAmount);
+        IERC20Upgradeable(TOKEN).transferFrom(from, beanieHolderAddress, beanieHolderAmount);
+        IERC20Upgradeable(TOKEN).transferFrom(from, beanBuybackAddress, beanieBuybackAmount);
     }
 
     function _accrueDevFees(
@@ -531,7 +527,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         uint256 beanieBuybackAmount
     ) private {
         uint256 accruedFees = devAmount + beanieHolderAmount + beanieBuybackAmount;
-        IERC20(TOKEN).transferFrom(from, address(this), accruedFees);
+        IERC20Upgradeable(TOKEN).transferFrom(from, address(this), accruedFees);
         accruedAdminFees += accruedFees;
     }
 
@@ -643,10 +639,6 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         beanBuybackAddress = _address;
     }
 
-    function setSpecialGasTax(uint256 gasAmount) external onlyOwner {
-        specialTaxGas = gasAmount;
-    }
-
     function setFeesOn(bool _value) external onlyOwner {
         feesOn = _value;
     }
@@ -675,12 +667,12 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
 
     // Emergency only - Recover Tokens
     function recoverToken(address _token, uint256 amount) external onlyOwner {
-        IERC20(_token).transfer(owner(), amount);
+        IERC20Upgradeable(_token).transfer(owner(), amount);
     }
 
     // Emergency only - Recover NFTs
     function recoverNFT(address _token, uint256 tokenId) external onlyOwner {
-        IERC721(_token).transferFrom(address(this), owner(), tokenId);
+        IERC721Upgradeable(_token).transferFrom(address(this), owner(), tokenId);
     }
 
     // Emergency only - Recover MOVR
@@ -735,7 +727,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     }
 
     function escrowedPurchase(
-        IERC721 _nft,
+        IERC721Upgradeable _nft,
         address ca,
         uint256 tokenId,
         uint256 price,
@@ -777,14 +769,14 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
 
     //FIXME: what do we do without feesOn
     function tokenPurchase(
-        IERC721 _nft,
+        IERC721Upgradeable _nft,
         address ca,
         uint256 tokenId,
         uint256 price,
         address payable oldOwner,
         address payable newOwner
     ) private {
-        IERC20 _token = IERC20(TOKEN);
+        IERC20Upgradeable _token = IERC20Upgradeable(TOKEN);
         (
             uint256 devFeeAmount,
             uint256 beanieHolderFeeAmount,
@@ -817,7 +809,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     //     returns (bool isValid)
     // {
     //     isValid = (listings[ca][tokenId].price != 0 &&
-    //         IERC721(ca).ownerOf(tokenId) == listings[ca][tokenId].lister);
+    //         IERC721Upgradeable(ca).ownerOf(tokenId) == listings[ca][tokenId].lister);
     // }
 
     function _sendEth(address _address, uint256 _amount) private {
