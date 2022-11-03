@@ -42,7 +42,7 @@ error BEANZeroInEscrow();
 
 //Anyone can delist nfts that are not approved or have passed expiry
 
-contract BeanieMarketV11 is IERC721ReceiverUpgradeable, ReentrancyGuardUpgradeable, OwnableUpgradeable {
+contract BeanieMarketV11Upgradeable is IERC721ReceiverUpgradeable, ReentrancyGuardUpgradeable, OwnableUpgradeable {
     using BeanUtils for bytes32[];
     using BeanUtils for address[];
 
