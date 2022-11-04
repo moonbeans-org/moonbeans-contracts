@@ -141,7 +141,6 @@ describe("Beanie Market", function () {
   })
 
   describe("Listings", function () {
-
     it("List token and updated storage structures", async function () {
       const { beanieMarket, dummyNFT, owner, addrs, now } = await loadFixture(deployMarketAndNFTFixture);
       const address0 = addrs[0];
@@ -445,7 +444,17 @@ describe("Beanie Market", function () {
       )
     });
 
-    it("Fulfill non-escrow offer", async function () {
+    it("make non-escrow offer updates storage structures", async function () {
+      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now, offerHashes } = await loadFixture(deployMarketAndMakeOffersFixture);
+      
+    });
+
+    it("Fulfill non-escrow offer ownership change", async function () {
+      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now, offerHashes } = await loadFixture(deployMarketAndMakeOffersFixture);
+
+    });
+
+    it("Fulfill non-escrow offer update storage structures", async function () {
       const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now, offerHashes } = await loadFixture(deployMarketAndMakeOffersFixture);
 
     });
