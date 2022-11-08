@@ -140,6 +140,8 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     mapping(bytes32 => Offer) public offers;
     mapping(address => bytes32[]) public offerHashesByBuyer;
 
+    mapping(address => uint256) private userNonces;
+
     //This may not actually be necessary.
     // mapping(address => mapping(bytes32 => uint256)) posInBuyerArray;
 
@@ -200,17 +202,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
             "Marketplace not approved to handle this user's tokens."
         );
 
-        //We reference listingHashesByOfferer as a form of nonced execution.
-        //I know the direct sload of listingHashesByOfferer is ugly here, but it saves gas / memory height.
-        //FIXME: futz around with this to see if we can shave off some gas later.
-        bytes32 listingHash = keccak256(
-            abi.encode(
-                ca,
-                tokenId,
-                msg.sender,
-                listingsByLister[msg.sender].length
-            )
-        );
+        bytes32 listingHash = computeOrderHash(msg.sender, ca, tokenId, userNonces[msg.sender]);
 
         listings[listingHash] = Listing(
             tokenId,
@@ -349,7 +341,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
             revert BEANContractNotApproved();
         if (IERC20(TOKEN).balanceOf(msg.sender) < price)
             revert BEANUserTokensLow();
-        bytes32 offerHash = computeOfferHash(ca, msg.sender, tokenId);
+        bytes32 offerHash = computeOrderHash(msg.sender, ca, tokenId, userNonces[msg.sender]);
         _storeOffer(offerHash, ca, msg.sender, tokenId, price, expiry, false);
         emit OfferPlaced(ca, tokenId, price, expiry, msg.sender, offerHash, block.timestamp);
     }
@@ -371,23 +363,25 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         totalEscrowedAmount += msg.value;
         totalInEscrow[msg.sender] += msg.value;
         
-        bytes32 offerHash = computeOfferHash(ca, msg.sender, tokenId);
+        bytes32 offerHash = computeOrderHash(msg.sender, ca, tokenId, userNonces[msg.sender]);
         _storeOffer(offerHash, ca, msg.sender, tokenId, price, expiry, true);
 
         emit OfferPlaced(ca, tokenId, price, expiry, msg.sender, offerHash, block.timestamp);
     }
 
-    function computeOfferHash(
-        address ca,
+    function computeOrderHash(
         address user,
-        uint256 tokenId
+        address token,
+        uint256 tokenId,
+        uint256 userNonce
     ) public view returns (bytes32 offerHash) {
         return keccak256(
             abi.encode(
-                ca,
-                tokenId,
                 user,
-                offerHashesByBuyer[user].length
+                token,
+                tokenId,
+                userNonce,
+                block.timestamp
             )
         );
     }
