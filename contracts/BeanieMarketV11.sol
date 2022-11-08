@@ -254,6 +254,11 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         listingsByLister[owner].swapPop(listing.posInListingsByLister);
         listingsByContract[listing.contractAddress].swapPop(listing.posInListingsByContract);
 
+        bytes32 replacedListingId = listingsByLister[owner][listing.posInListingsByLister];
+        //update posInListingsByLister and posInListingByContract
+        listings[replacedListingId].posInListingsByLister = listing.posInListingsByLister;
+        listings[replacedListingId].posInListingsByContract = listing.posInListingsByContract;
+
         emit TokenDelisted(
             listing.contractAddress,
             listing.tokenId,

@@ -4,6 +4,7 @@ const { loadFixture } = require("@nomicfoundation/hardhat-network-helpers");
 
 const ONE_ETH = ethers.utils.parseEther("1.0");
 const BIG_ZERO = ethers.constants.Zero;
+const ADDR_ZERO = ethers.constants.AddressZero;
 
 describe("Beanie Market", function () {
   async function deployMarketAndNFTFixture() {
@@ -16,8 +17,6 @@ describe("Beanie Market", function () {
     for (let i = 0; i<3; i++) {
       paymentToken.mint(addrs[i].address, ONE_ETH.mul(100));
     }
-
-    console.log(await paymentToken.balanceOf(addrs[2].address))
 
     const MARKET = await ethers.getContractFactory("BeanieMarketV11");
     const beanieMarket = await MARKET.deploy(paymentToken.address);
@@ -241,8 +240,6 @@ describe("Beanie Market", function () {
       const listingTailLister = await listingsByLister0[listingsByLister0.length - 1];
       const listingTailContract = await listingsByLister0[listingsByLister0.length - 1];
 
-      console.log(await beanieMarket.listings(listingTailLister));
-
       //Fulfill listing
 
       await beanieMarket.connect(addrs[1]).fulfillListing(listingToFulfill, addrs[1].address, {value: ONE_ETH});
@@ -260,9 +257,12 @@ describe("Beanie Market", function () {
       expect(listingsByLister1).to.not.contain(listingToFulfill)
       expect(listingsByContract).to.not.contain(listingToFulfill)
 
-      console.log(await beanieMarket.listings(listingTailLister));
-
       //Check to see if new listingsByLister and listingsByContract is correct
+      expect((await beanieMarket.listings(listingTailLister)).posInListingsByLister).to.equal(0);
+      expect((await beanieMarket.listings(listingTailContract)).posInListingsByContract).to.equal(0);
+
+      //Make sure old listing entry has been removed
+      expect(await beanieMarket.listings(listingToFulfill)).to.eql([BIG_ZERO, BIG_ZERO, BIG_ZERO, ADDR_ZERO, ADDR_ZERO, 0, 0]);
     });
 
     it("Fulfill listing feesOff sends corrent eth amount", async function () {
@@ -410,14 +410,30 @@ describe("Beanie Market", function () {
       const listingIds = await beanieMarket.getListingsByContract(dummyNFT.address);
       const listingToDelist = listingIds[0];
 
-      await beanieMarket.connect(address0).delistToken(listingToDelist);
-
       let listingsByLister0 = await beanieMarket.getListingsByLister(addrs[0].address);
       let listingsByLister1 = await beanieMarket.getListingsByLister(addrs[1].address);
       let listingsByContract = await beanieMarket.getListingsByContract(dummyNFT.address);
+
+      const listingTailLister = await listingsByLister0[listingsByLister0.length - 1];
+      const listingTailContract = await listingsByLister0[listingsByLister0.length - 1];
+
+      await beanieMarket.connect(address0).delistToken(listingToDelist);
+
+      listingsByLister0 = await beanieMarket.getListingsByLister(addrs[0].address);
+      listingsByLister1 = await beanieMarket.getListingsByLister(addrs[1].address);
+      listingsByContract = await beanieMarket.getListingsByContract(dummyNFT.address);
       expect(listingsByLister0).to.not.contain(listingToDelist)
       expect(listingsByLister1).to.not.contain(listingToDelist)
       expect(listingsByContract).to.not.contain(listingToDelist)
+
+      expect(listingsByLister0.length).to.equal(3)
+      expect(listingsByLister1.length).to.equal(1)
+      expect(listingsByContract.length).to.equal(4)
+
+      //Check to see if new listingsByLister and listingsByContract is correct
+      expect((await beanieMarket.listings(listingTailLister)).posInListingsByLister).to.equal(0);
+      expect((await beanieMarket.listings(listingTailContract)).posInListingsByContract).to.equal(0);
+      
     });
   });
 
