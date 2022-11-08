@@ -47,6 +47,8 @@ describe("Beanie Market", function () {
 
     await beanieMarket.connect(addrs[0]).listToken(dummyNFT.address, 1, ONE_ETH, now + 10);
     await beanieMarket.connect(addrs[0]).listToken(dummyNFT.address, 2, ONE_ETH, now + 100);
+    await beanieMarket.connect(addrs[0]).listToken(dummyNFT.address, 3, ONE_ETH, now + 100);
+    await beanieMarket.connect(addrs[0]).listToken(dummyNFT.address, 4, ONE_ETH, now + 100);
     await beanieMarket.connect(addrs[1]).listToken(dummyNFT.address, 11, ONE_ETH, now + 1000);
 
     return { beanieMarket, dummyNFT, owner, addrs, now };
@@ -133,14 +135,14 @@ describe("Beanie Market", function () {
 
   describe("Deployment", function () {
     it("Deployment", async function () {
-      const { beanieMarket, dummyNFT, owner, addrs } = await loadFixture(deployMarketAndNFTFixture);
-      expect(await beanieMarket.TOKEN()).to.equal("0xAcc15dC74880C9944775448304B263D191c6077F");
+      const { beanieMarket, dummyNFT, paymentToken, owner, addrs } = await loadFixture(deployMarketAndNFTFixture);
+      expect(await beanieMarket.TOKEN()).to.equal(paymentToken.address);
       expect(await dummyNFT.symbol()).to.equal("DUMMY")
-      expect(await dummyNFT.balanceOf(addrs[0].address)).to.equal(10);
+      expect(await dummyNFT.balanceOf(addrs[0].address)).to.eql(ethers.BigNumber.from(10));
     });
   })
 
-  describe("Listings", function () {
+  describe.only("Listings", function () {
     it("List token and updated storage structures", async function () {
       const { beanieMarket, dummyNFT, owner, addrs, now } = await loadFixture(deployMarketAndNFTFixture);
       const address0 = addrs[0];
@@ -219,6 +221,8 @@ describe("Beanie Market", function () {
       expect(await dummyNFT.ownerOf(1)).to.equal(addrs[1].address);
     });
 
+    //When listing0 is fulfilled, new posInListingByLister[0] should be previous last listing
+
     it("Fulfill listing updates storage structures", async function () {
       const { beanieMarket, dummyNFT, owner, addrs, now } = await loadFixture(deployMarketAndListNFTsFixture);
       const address0 = addrs[0];
@@ -234,19 +238,31 @@ describe("Beanie Market", function () {
       expect(listingsByContract).to.contain(listingToFulfill)
       expect(listingsByLister1).to.not.contain(listingToFulfill)
 
+      const listingTailLister = await listingsByLister0[listingsByLister0.length - 1];
+      const listingTailContract = await listingsByLister0[listingsByLister0.length - 1];
+
+      console.log(await beanieMarket.listings(listingTailLister));
+
+      //Fulfill listing
+
       await beanieMarket.connect(addrs[1]).fulfillListing(listingToFulfill, addrs[1].address, {value: ONE_ETH});
       expect(await dummyNFT.ownerOf(1)).to.equal(addrs[1].address);
       
       listingsByLister0 = await beanieMarket.getListingsByLister(addrs[0].address);
       listingsByLister1 = await beanieMarket.getListingsByLister(addrs[1].address);
       listingsByContract = await beanieMarket.getListingsByContract(dummyNFT.address);
+      expect(listingsByLister0.length).to.equal(3)
       expect(listingsByLister1.length).to.equal(1)
-      expect(listingsByLister0.length).to.equal(1)
-      expect(listingsByContract.length).to.equal(2)
+      expect(listingsByContract.length).to.equal(4)
 
+      //Make sure listing ID is removed from listingsByLister
       expect(listingsByLister0).to.not.contain(listingToFulfill)
       expect(listingsByLister1).to.not.contain(listingToFulfill)
       expect(listingsByContract).to.not.contain(listingToFulfill)
+
+      console.log(await beanieMarket.listings(listingTailLister));
+
+      //Check to see if new listingsByLister and listingsByContract is correct
     });
 
     it("Fulfill listing feesOff sends corrent eth amount", async function () {
@@ -275,7 +291,7 @@ describe("Beanie Market", function () {
 
     });
 
-    it.only("Fulfill listing feesOn sends corrent token amount, autosend on", async function () {
+    it("Fulfill listing feesOn sends corrent token amount, autosend on", async function () {
       const { beanieMarket, dummyNFT, owner, addrs, now } = await loadFixture(deployMarketAndListNFTsFixture);
       const address0 = addrs[0];
       await beanieMarket.connect(owner).setAutoSendFees(true);
@@ -325,7 +341,7 @@ describe("Beanie Market", function () {
 
     });
 
-    it.only("Fulfill listing feesOn sends corrent token amount, autosend off and then process", async function () {
+    it("Fulfill listing feesOn sends corrent token amount, autosend off and then process", async function () {
       const { beanieMarket, dummyNFT, owner, addrs, now } = await loadFixture(deployMarketAndListNFTsFixture);
       const address0 = addrs[0];
 
