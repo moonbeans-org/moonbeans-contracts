@@ -242,7 +242,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         IERC721 token = IERC721(listing.contractAddress);
         address tknOwner = token.ownerOf(listing.tokenId);
 
-        if (msg.sender != owner() && !administrators[msg.sender] && listing.expiry > block.timestamp) revert BEANOwnerNotApproved();
+        if (!(msg.sender == owner() || administrators[msg.sender] || listing.expiry > block.timestamp)) revert BEANOwnerNotApproved();
 
         updateListingPos(listingId, tknOwner, listing.contractAddress);
 
