@@ -128,6 +128,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         uint32 posInOffersByOfferer;
         bool escrowed;
     }
+    //TODO: re-examine escrow amounts. Keep coupled unles dev flag set
 
     mapping(bytes32 => Listing) public listings;
     mapping(address => bytes32[]) public listingsByLister;
@@ -142,7 +143,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
 
     mapping(address => uint256) private userNonces;
 
-    //This may not actually be necessary.
+    // This may not actually be necessary.
     // mapping(address => mapping(bytes32 => uint256)) posInBuyerArray;
 
     bool public tradingPaused = false;
@@ -280,14 +281,23 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
 
         //effects - remove listing
         delete listings[listingId];
+        console.log("HERE1");
+
         //Cleanup accessory mappings. We pass the mapping results directly to the swapPop function to save memory height.
         listingsByLister[oldOwner].swapPop(listing.posInListingsByLister);
         listingsByContract[listing.contractAddress].swapPop(listing.posInListingsByContract);
-
+        console.log("HERE2");
         bytes32 replacedListingId = listingsByLister[oldOwner][listing.posInListingsByLister];
+        console.log("HERE 2.1");
         //update posInListingsByLister and posInListingByContract
-        listings[replacedListingId].posInListingsByLister = listing.posInListingsByLister;
-        listings[replacedListingId].posInListingsByContract = listing.posInListingsByContract;
+        if (listingsByLister[oldOwner].length > 0) {
+            listings[replacedListingId].posInListingsByLister = listing.posInListingsByLister;
+        }
+        console.log("HERE 2.2");
+        if (listingsByContract[listing.contractAddress].length > 0) {
+            listings[replacedListingId].posInListingsByContract = listing.posInListingsByContract;
+        }
+        console.log("HERE3");
 
         //Interaction - transfer NFT and process fees
         token.safeTransferFrom(oldOwner, to, listing.tokenId);
@@ -462,6 +472,8 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
 
         delete offers[offerHash];
         offerHashesByBuyer[offer.offerer].swapPop(offer.posInOffersByOfferer);
+        bytes32 replacedListingId = offerHashesByBuyer[msg.sender][offer.posInOffersByOfferer];
+        offers[replacedListingId].posInOffersByOfferer = offer.posInOffersByOfferer;
 
         // Actually perform trade
         address payable oldOwner = payable(address(msg.sender));
@@ -560,10 +572,12 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     }
 
     function totalFees() public view returns (uint256) {
-        return (devFee +
+        return (
+            devFee +
             beanieHolderFee +
             beanBuybackFee +
-            defaultCollectionOwnerFee);
+            defaultCollectionOwnerFee
+        );
     }
 
     function checkEscrowAmount(address user) external view returns (uint256) {
@@ -710,7 +724,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         return listingsByContract[contractAddress];
     }
 
-    function geOffersByOfferer(address offerer) public view returns(bytes32[] memory) {
+    function getOffersByOfferer(address offerer) public view returns(bytes32[] memory) {
         return offerHashesByBuyer[offerer];
     }
 
