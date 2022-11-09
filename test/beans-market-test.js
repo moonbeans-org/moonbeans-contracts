@@ -605,7 +605,7 @@ describe("Beanie Market", function () {
       expect(newOwnerBalanceAfter).to.eql(newOwnerBalanceBefore.sub(ONE_ETH));
     });
 
-    it.only("Fulfill non-escrow feesOn sends correct token amount, autosend on", async function () {
+    it("Fulfill non-escrow feesOn sends correct token amount, autosend on", async function () {
       const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeOffersFixture);
 
       await beanieMarket.connect(owner).setFeesOn(true);

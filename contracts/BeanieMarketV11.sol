@@ -850,7 +850,6 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
             _token.transferFrom(newOwner, oldOwner, priceNetFees);
             _token.transferFrom(newOwner, collectionOwners[ca], collectionOwnerFeeAmount);
             if (autoSendFees) {
-                console.log("AUTOSEND");
                 _processDevFees(newOwner, devFeeAmount, beanieHolderFeeAmount, beanBuybackFeeAmount);
             } else {
                 _accrueDevFees(newOwner, devFeeAmount, beanieHolderFeeAmount, beanBuybackFeeAmount);
