@@ -526,7 +526,8 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         uint256 denominator = devFee + beanieHolderFee + beanBuybackFee;
         uint256 devFeeAmount = accruedAdminFeesEth * devFee / denominator;
         uint256 beanieFeeAmount = accruedAdminFeesEth * beanieHolderFee / denominator;
-        uint256 beanieBuybackAmount = ((accruedAdminFeesEth - devFeeAmount) - beanieFeeAmount) - 1;
+        uint256 beanieBuybackAmount = ((accruedAdminFeesEth - devFeeAmount) - beanieFeeAmount);
+        accruedAdminFeesEth -= accruedAdminFeesEth;
         _processDevFeesEth(devFeeAmount, beanieFeeAmount, beanieBuybackAmount);
     }
 
@@ -554,7 +555,8 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         uint256 denominator = devFee + beanieHolderFee + beanBuybackFee;
         uint256 devFeeAmount = accruedAdminFees * devFee / denominator;
         uint256 beanieFeeAmount = accruedAdminFees * beanieHolderFee / denominator;
-        uint256 beanieBuybackAmount = ((accruedAdminFees - devFeeAmount) - beanieFeeAmount) - 1;
+        uint256 beanieBuybackAmount = ((accruedAdminFees - devFeeAmount) - beanieFeeAmount);
+        accruedAdminFees -= accruedAdminFees;
         _processDevFees(address(this), devFeeAmount, beanieFeeAmount, beanieBuybackAmount);
     }
 
@@ -575,9 +577,9 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         uint256 beanieHolderAmount,
         uint256 beanieBuybackAmount
     ) private {
-        IERC20(TOKEN).transferFrom(from, devAddress, devAmount);
-        IERC20(TOKEN).transferFrom(from, beanieHolderAddress, beanieHolderAmount);
-        IERC20(TOKEN).transferFrom(from, beanBuybackAddress, beanieBuybackAmount);
+        IERC20(TOKEN).transfer(devAddress, devAmount);
+        IERC20(TOKEN).transfer(beanieHolderAddress, beanieHolderAmount);
+        IERC20(TOKEN).transfer(beanBuybackAddress, beanieBuybackAmount);
     }
 
     // OTHER PUBLIC FUNCTIONS
