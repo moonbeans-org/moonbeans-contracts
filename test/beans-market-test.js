@@ -110,7 +110,7 @@ describe("Beanie Market", function () {
     });
   })
 
-  describe.only("Listings", function () {
+  describe("Listings", function () {
     it("List token and updated storage structures", async function () {
       const { beanieMarket, dummyNFT, owner, addrs, now } = await loadFixture(deployMarketAndNFTFixture);
       const address0 = addrs[0];
@@ -456,7 +456,6 @@ describe("Beanie Market", function () {
           ethers.BigNumber.from(now + 10),
           dummyNFT.address,
           addrs[2].address,
-          0,
           false
         ]
       )
@@ -468,7 +467,6 @@ describe("Beanie Market", function () {
           ethers.BigNumber.from(now + 100),
           dummyNFT.address,
           addrs[2].address,
-          2,
           false
         ]
       )
@@ -480,7 +478,6 @@ describe("Beanie Market", function () {
           ethers.BigNumber.from(now + 1000),
           dummyNFT.address,
           addrs[3].address,
-          0,
           false
         ]
       )
@@ -512,7 +509,7 @@ describe("Beanie Market", function () {
       expect(await dummyNFT.ownerOf(offer1Data.tokenId)).to.equal(offer1Data.offerer);
     });
 
-    it("Fulfill non-escrow offer update storage structures", async function () {
+    it.only("Fulfill non-escrow offer update storage structures", async function () {
       const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeOffersFixture);
 
       let addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
@@ -523,7 +520,6 @@ describe("Beanie Market", function () {
 
       const offer0Hash = addr2offers[0];
       const offer0Data = await beanieMarket.offers(addr2offers[0]);
-      
       const offer1Hash = addr3offers[1];
       const offer1Data = await beanieMarket.offers(addr3offers[1]);
 
@@ -536,8 +532,7 @@ describe("Beanie Market", function () {
       expect(addr2offers).to.not.contain(offer0Hash)
       expect(addr3offers).to.not.contain(offer1Hash)
 
-      expect((await beanieMarket.offers(addr2offersTail)).posInOffersByOfferer).to.equal(0);
-      // expect((await beanieMarket.offers(addr3offersTail)).posInOffersByOfferer).to.equal(1);
+      expect(await beanieMarket.posInOffers(addr2offersTail)).to.eql(BIG_ZERO);
 
     });
 
@@ -565,8 +560,9 @@ describe("Beanie Market", function () {
       expect(addr2offers).to.not.contain(offer0Hash)
       expect(addr3offers).to.not.contain(offer1Hash)
 
-      expect((await beanieMarket.offers(addr2offersTail)).posInOffersByOfferer).to.equal(0);
-      // expect((await beanieMarket.offers(addr3offersTail)).posInOffersByOfferer).to.equal(1);
+      console.log(await beanieMarket.posInOffers(addr2offersTail));
+
+      expect(await beanieMarket.posInOffers(addr2offersTail)).to.eql(BIG_ZERO);
 
     });
 

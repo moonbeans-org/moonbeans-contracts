@@ -18,6 +18,7 @@ error BEANListingNotActive();
 error BEANTradingPaused();
 error BEANNotOwnerOrAdmin();
 error BEANNoSelfOffer();
+error BEANCollectionNotEnabled();
 
 //General
 error BEANZeroPrice();
@@ -29,8 +30,10 @@ error BEANOfferArrayPosMismatch();
 error BEANNoCancellableOffer();
 error BEANCallerNotOwner();
 error BEANNotEnoughInEscrow();
+error BEANOrderExpired();
 
 //Escrow
+error BEANWithdrawNotEnabled();
 error BEANEscrowOverWithdraw();
 error BEANZeroInEscrow();
 
@@ -141,31 +144,20 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
 
     mapping(bytes32 => Listing) public listings;
     mapping(address => bytes32[]) public listingsByLister;
-    // mapping(bytes32 => uint256) posInListingsByLister;
-
-    //This may not actually be necessary.
-    mapping(address => bytes32[])public listingsByContract;
-    // mapping(bytes32 => uint256) posInListingsByContract;
+    mapping(address => bytes32[]) public listingsByContract;
 
     mapping(bytes32 => Offer) public offers;
     mapping(address => bytes32[]) public offerHashesByBuyer;
 
     mapping(address => uint256) private userNonces;
 
-    // This may not actually be necessary.
-    // mapping(address => mapping(bytes32 => uint256)) posInBuyerArray;
-
     bool public tradingPaused = false;
-    bool public useSuperGasTaxes = false;
     bool public feesOn = true;
     bool public autoSendFees = false;
-    bool public delistAfterAcceptingOffer = true;
-    bool public clearBidsAfterAcceptingOffer = false;
-    bool public clearBidsAfterFulfillingListing = false;
     bool public collectionOwnersCanSetRoyalties = true;
+    bool public usersCanWithdrawEscrow = false;
 
     mapping(address => bool) collectionTradingEnabled;
-
     mapping(address => address) collectionOwners;
     mapping(address => uint256) totalInEscrow;
     mapping(address => uint256) collectionOwnerFees;
@@ -264,29 +256,6 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         );
     }
 
-    function updateListingPos(bytes32 listingId, address owner, address listingAddress) internal {
-        ListingPos memory listingPos_ = posInListings[listingId];
-        //TODO: Try scoping this for gas cost
-        bytes32 offerHashToReplace;
-        //Cleanup accessory mappings. We pass the mapping results directly to the swapPop function to save memory height.\
-        uint256 lastListerIndex = listingsByLister[owner].length-1;
-
-        offerHashToReplace = listingsByLister[owner][lastListerIndex];
-        listingsByLister[owner].swapPop(listingPos_.posInListingsByLister);
-        if (listingsByLister[owner].length > 0) {
-            posInListings[offerHashToReplace].posInListingsByLister = listingPos_.posInListingsByLister;
-        }
-        
-        uint256 lastContractIndex = listingsByContract[listingAddress].length-1;
-
-        offerHashToReplace = listingsByContract[listingAddress][lastContractIndex];
-        listingsByContract[listingAddress].swapPop(listingPos_.posInListingsByContract);
-        if (listingsByContract[listingAddress].length > 0) {
-            posInListings[offerHashToReplace].posInListingsByContract = listingPos_.posInListingsByContract;
-        }
-        delete posInListings[listingId];
-    }
-
     // Allows a buyer to buy at the listed price.
     function fulfillListing(bytes32 listingId, address to) external payable nonReentrant {
         if (tradingPaused) revert BEANTradingPaused();
@@ -345,6 +314,29 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         );
     }
 
+    function updateListingPos(bytes32 listingId, address tknOwner, address listingAddress) internal {
+        ListingPos memory listingPos_ = posInListings[listingId];
+        //TODO: Try scoping this for gas cost
+        bytes32 offerHashToReplace;
+        //Cleanup accessory mappings. We pass the mapping results directly to the swapPop function to save memory height.\
+        uint256 lastListerIndex = listingsByLister[tknOwner].length-1;
+
+        offerHashToReplace = listingsByLister[tknOwner][lastListerIndex];
+        listingsByLister[tknOwner].swapPop(listingPos_.posInListingsByLister);
+        if (listingsByLister[tknOwner].length > 0) {
+            posInListings[offerHashToReplace].posInListingsByLister = listingPos_.posInListingsByLister;
+        }
+        
+        uint256 lastContractIndex = listingsByContract[listingAddress].length-1;
+
+        offerHashToReplace = listingsByContract[listingAddress][lastContractIndex];
+        listingsByContract[listingAddress].swapPop(listingPos_.posInListingsByContract);
+        if (listingsByContract[listingAddress].length > 0) {
+            posInListings[offerHashToReplace].posInListingsByContract = listingPos_.posInListingsByContract;
+        }
+        delete posInListings[listingId];
+    }
+
     // OFFERS
     // Make a standard offer (checks balance of bidder, but does not escrow).
     // TODO: Robust tracking of extant offers and approval / fund coverage.
@@ -363,6 +355,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         if (IERC20(TOKEN).balanceOf(msg.sender) < price)
             revert BEANUserTokensLow();
         bytes32 offerHash = computeOrderHash(msg.sender, ca, tokenId, userNonces[msg.sender]);
+        unchecked {++userNonces[msg.sender];}
         _storeOffer(offerHash, ca, msg.sender, tokenId, price, expiry, false);
         emit OfferPlaced(ca, tokenId, price, expiry, msg.sender, offerHash, block.timestamp);
     }
@@ -385,6 +378,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         totalInEscrow[msg.sender] += msg.value;
         
         bytes32 offerHash = computeOrderHash(msg.sender, ca, tokenId, userNonces[msg.sender]);
+        unchecked {++userNonces[msg.sender];}
         _storeOffer(offerHash, ca, msg.sender, tokenId, price, expiry, true);
 
         emit OfferPlaced(ca, tokenId, price, expiry, msg.sender, offerHash, block.timestamp);
@@ -430,81 +424,87 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     }
 
     // Cancel an offer (escrowed or not). Could have gas issues if there's too many offers...
-    // function cancelOffer(
-    //     bytes32 offerHash,
-    //     bool returnEscrow
-    // ) external nonReentrant {
-    //     Offer memory offer = offers[offerHash];
-    //     //TODO: Test this because I always futz up my bools
-    //     if (
-    //         offer.offerer != msg.sender &&
-    //         !administrators[msg.sender] &&
-    //         offer.expiry < block.timestamp
-    //     ) revert BEANNotAuthorized();
-    //     if (offer.price == 0)
-    //         revert BEANNoCancellableOffer();
+    function cancelOffer(
+        bytes32 offerHash,
+        bool returnEscrow
+    ) external nonReentrant {
+        Offer memory offer = offers[offerHash];
+        //TODO: Test this because I always futz up my bools
+        if (
+            offer.offerer != msg.sender &&
+            !administrators[msg.sender] &&
+            offer.expiry < block.timestamp
+        ) revert BEANNotAuthorized();
+        if (offer.price == 0)
+            revert BEANNoCancellableOffer();
 
-    //     delete offers[offerHash];
-    //     offerHashesByBuyer[offer.offerer].swapPop(offer.posInOffersByOfferer);
+        delete offers[offerHash];
+        _updateOfferPos(offerHash, offer.offerer);
 
-    //     if (offer.escrowed && returnEscrow) {
-    //         if (offer.price > totalInEscrow[offer.offerer])
-    //             revert BEANEscrowOverWithdraw();
-    //         _returnEscrow(offer.offerer, offer.price);
-    //     }
-    // }
-
-    function _returnEscrow(address depositor, uint256 escrowAmount) private {
-        totalEscrowedAmount -= escrowAmount;
-        totalInEscrow[depositor] -= escrowAmount;
-        _sendEth(depositor, escrowAmount); 
+        if (offer.escrowed && returnEscrow) {
+            if (offer.price > totalInEscrow[offer.offerer])
+                revert BEANEscrowOverWithdraw();
+            _returnEscrow(offer.offerer, offer.price);
+        }
     }
 
-    // // Accept an active offer.
-    // function acceptOffer(
-    //     bytes32 offerHash
-    // ) external nonReentrant {
+    // Accept an active offer.
+    function acceptOffer(
+        bytes32 offerHash
+    ) external nonReentrant {
 
-    //     if (tradingPaused) revert BEANTradingPaused();
+        if (tradingPaused) 
+            revert BEANTradingPaused();
 
-    //     Offer memory offer = offers[offerHash];
+        Offer memory offer = offers[offerHash];
+        IERC721 _nft = IERC721(offer.contractAddress);
+        
+        if (offer.expiry < block.timestamp)
+            revert BEANOrderExpired();
+        if(msg.sender != _nft.ownerOf(offer.tokenId))
+            revert BEANCallerNotOwner();
+        if (!collectionTradingEnabled[offer.contractAddress])
+            revert BEANCollectionNotEnabled();
 
-    //     IERC721 _nft = IERC721(offer.contractAddress);
-    //     if(msg.sender != _nft.ownerOf(offer.tokenId))
-    //         revert BEANCallerNotOwner();
-    //     require(
-    //         collectionTradingEnabled[offer.contractAddress],
-    //         "Trading for this collection is not enabled."
-    //     );
+        delete offers[offerHash];
+        
+        _updateOfferPos(offerHash, offer.offerer);
 
-    //     //Cleanup offer storage - abstract this to a function
-    //     if (offerHashesByBuyer[offer.offerer][offer.posInOffersByOfferer] != offerHash)
-    //         revert BEANOfferArrayPosMismatch();
+        // Actually perform trade
+        address payable oldOwner = payable(address(msg.sender));
+        address payable newOwner = payable(address(offer.offerer));
+        if (offer.escrowed) {
+            escrowedPurchase(_nft, offer.contractAddress, offer.tokenId, offer.price, oldOwner, newOwner);
+        } else {
+            tokenPurchase(_nft, offer.contractAddress, offer.tokenId, offer.price, oldOwner, newOwner);
+        }
+        emit TokenPurchased(oldOwner, newOwner, offer.price, offer.contractAddress, offer.tokenId, offerHash, block.timestamp);
+    }
 
-    //     delete offers[offerHash];
-    //     offerHashesByBuyer[offer.offerer].swapPop(offer.posInOffersByOfferer);
-    //     bytes32 replacedListingId = offerHashesByBuyer[msg.sender][offer.posInOffersByOfferer];
-    //     offers[replacedListingId].posInOffersByOfferer = offer.posInOffersByOfferer;
+    function _updateOfferPos(bytes32 offerId, address offerer) internal {
+        OfferPos memory offerPos_ = posInOffers[offerId];
+        //TODO: Try scoping this for gas cost
+        bytes32 offerHashToReplace;
+        //Cleanup accessory mappings. We pass the mapping results directly to the swapPop function to save memory height.
+        uint256 lastOffererIndex = offerHashesByBuyer[offerer].length-1;
 
-    //     // Actually perform trade
-    //     address payable oldOwner = payable(address(msg.sender));
-    //     address payable newOwner = payable(address(offer.offerer));
-    //     if (offer.escrowed) {
-    //         escrowedPurchase(_nft, offer.contractAddress, offer.tokenId, offer.price, oldOwner, newOwner);
-    //     } else {
-    //         tokenPurchase(_nft, offer.contractAddress, offer.tokenId, offer.price, oldOwner, newOwner);
-    //     }
-    //     emit TokenPurchased(oldOwner, newOwner, offer.price, offer.contractAddress, offer.tokenId, offerHash, block.timestamp);
-    // }
+        offerHashToReplace = offerHashesByBuyer[offerer][lastOffererIndex];
+        offerHashesByBuyer[offerer].swapPop(offerPos_.posInOffersByOfferer);
+        if (offerHashesByBuyer[offerer].length > 0) {
+            posInOffers[offerHashToReplace].posInOffersByOfferer = offerPos_.posInOffersByOfferer;
+        }
+        delete posInOffers[offerId];
+    }
 
     // PUBLIC ESCROW FUNCTIONS
-    //TODO: fix this
     function addFundsToEscrow() external payable nonReentrant {
         totalEscrowedAmount += msg.value;
         totalInEscrow[msg.sender] += msg.value;
     }
 
     function withdrawFundsFromEscrow(uint256 amount) external nonReentrant {
+        if (!usersCanWithdrawEscrow)
+            revert BEANWithdrawNotEnabled();
         if (totalInEscrow[msg.sender] == 0)
             revert BEANZeroInEscrow();
         if (totalInEscrow[msg.sender] < amount)
@@ -516,16 +516,21 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         return totalInEscrow[user];
     }
 
+    function _returnEscrow(address depositor, uint256 escrowAmount) private {
+        totalEscrowedAmount -= escrowAmount;
+        totalInEscrow[depositor] -= escrowAmount;
+        _sendEth(depositor, escrowAmount); 
+    }
+
     // DEV FEE PROCESSING
 
-    function _processDevFeesEth(
-        uint256 devAmount,
-        uint256 beanieHolderAmount,
-        uint256 beanieBuybackAmount
-    ) private {
-        _sendEth(devAddress, devAmount);
-        _sendEth(beanieHolderAddress, beanieHolderAmount);
-        _sendEth(beanBuybackAddress, beanieBuybackAmount);
+    //Leave 1 in each slot for gas savings
+    function processDevFeesEth() external onlyAdmins() {
+        uint256 denominator = devFee + beanieHolderFee + beanBuybackFee;
+        uint256 devFeeAmount = accruedAdminFeesEth * devFee / denominator;
+        uint256 beanieFeeAmount = accruedAdminFeesEth * beanieHolderFee / denominator;
+        uint256 beanieBuybackAmount = ((accruedAdminFeesEth - devFeeAmount) - beanieFeeAmount) - 1;
+        _processDevFeesEth(devFeeAmount, beanieFeeAmount, beanieBuybackAmount);
     }
 
     function _accrueDevFeesEth(
@@ -537,24 +542,23 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         accruedAdminFeesEth += accruedFees;
     }
 
-    //Leave 1 in each slot for gas savings
-    function processDevFeesEth() external onlyAdmins() {
-        uint256 denominator = devFee + beanieHolderFee + beanBuybackFee;
-        uint256 devFeeAmount = accruedAdminFeesEth * devFee / denominator;
-        uint256 beanieFeeAmount = accruedAdminFeesEth * beanieHolderFee / denominator;
-        uint256 beanieBuybackAmount = ((accruedAdminFeesEth - devFeeAmount) - beanieFeeAmount) - 1;
-        _processDevFeesEth(devFeeAmount, beanieFeeAmount, beanieBuybackAmount);
-    }
-
-    function _processDevFees(
-        address from,
+    function _processDevFeesEth(
         uint256 devAmount,
         uint256 beanieHolderAmount,
         uint256 beanieBuybackAmount
     ) private {
-        IERC20(TOKEN).transferFrom(from, devAddress, devAmount);
-        IERC20(TOKEN).transferFrom(from, beanieHolderAddress, beanieHolderAmount);
-        IERC20(TOKEN).transferFrom(from, beanBuybackAddress, beanieBuybackAmount);
+        _sendEth(devAddress, devAmount);
+        _sendEth(beanieHolderAddress, beanieHolderAmount);
+        _sendEth(beanBuybackAddress, beanieBuybackAmount);
+    }
+
+    //Leave 1 accrued fees slot for gas savings
+    function processDevFeesToken() external onlyAdmins() {
+        uint256 denominator = devFee + beanieHolderFee + beanBuybackFee;
+        uint256 devFeeAmount = accruedAdminFees * devFee / denominator;
+        uint256 beanieFeeAmount = accruedAdminFees * beanieHolderFee / denominator;
+        uint256 beanieBuybackAmount = ((accruedAdminFees - devFeeAmount) - beanieFeeAmount) - 1;
+        _processDevFees(address(this), devFeeAmount, beanieFeeAmount, beanieBuybackAmount);
     }
 
     function _accrueDevFees(
@@ -568,13 +572,15 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         accruedAdminFees += accruedFees;
     }
 
-    //Leave 1 accrued fees slot for gas savings
-    function processDevFeesToken() external onlyAdmins() {
-        uint256 denominator = devFee + beanieHolderFee + beanBuybackFee;
-        uint256 devFeeAmount = accruedAdminFees * devFee / denominator;
-        uint256 beanieFeeAmount = accruedAdminFees * beanieHolderFee / denominator;
-        uint256 beanieBuybackAmount = ((accruedAdminFees - devFeeAmount) - beanieFeeAmount) - 1;
-        _processDevFees(address(this), devFeeAmount, beanieFeeAmount, beanieBuybackAmount);
+    function _processDevFees(
+        address from,
+        uint256 devAmount,
+        uint256 beanieHolderAmount,
+        uint256 beanieBuybackAmount
+    ) private {
+        IERC20(TOKEN).transferFrom(from, devAddress, devAmount);
+        IERC20(TOKEN).transferFrom(from, beanieHolderAddress, beanieHolderAmount);
+        IERC20(TOKEN).transferFrom(from, beanBuybackAddress, beanieBuybackAmount);
     }
 
     // OTHER PUBLIC FUNCTIONS
@@ -619,11 +625,6 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     function setTrading(bool value) external onlyOwner {
         require(tradingPaused != value, "Already set to that value.");
         tradingPaused = value;
-    }
-
-    function setSuperGasTaxes(bool value) external onlyOwner {
-        require(useSuperGasTaxes != value, "Already set to that value.");
-        useSuperGasTaxes = value;
     }
 
     function setCollectionTrading(address ca, bool value) external onlyAdmins {
@@ -690,19 +691,8 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         autoSendFees = _value;
     }
 
-    function setDelistAfterAcceptingOffer(bool _value) external onlyOwner {
-        delistAfterAcceptingOffer = _value;
-    }
-
-    function setClearBidsAfterAcceptingOffer(bool _value) external onlyOwner {
-        clearBidsAfterAcceptingOffer = _value;
-    }
-
-    function setClearBidsAfterFulfillingListing(bool _value)
-        external
-        onlyOwner
-    {
-        clearBidsAfterFulfillingListing = _value;
+    function setUsersCanWithdrawEscrow(bool _value) external onlyAdmins {
+        usersCanWithdrawEscrow = _value;
     }
 
     function setCollectionOwnersCanSetRoyalties(bool _value)
