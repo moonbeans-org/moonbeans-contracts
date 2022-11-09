@@ -22,8 +22,9 @@ error BEANCollectionNotEnabled();
 
 //General
 error BEANZeroPrice();
+error BEANBadPrice();
 
-//Offers
+//Offers or Listings
 error BEANContractNotApproved();
 error BEANUserTokensLow();
 error BEANOfferArrayPosMismatch();
@@ -31,6 +32,7 @@ error BEANNoCancellableOffer();
 error BEANCallerNotOwner();
 error BEANNotEnoughInEscrow();
 error BEANOrderExpired();
+error BEANBadExpiry();
 
 //Escrow
 error BEANWithdrawNotEnabled();
@@ -91,6 +93,10 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     );
     event EscrowReturned(address indexed user, uint256 indexed price);
 
+    // Constants
+    uint256 private MAX_INT = 2**256 - 1;
+    uint128 private SMOL_MAX_INT = 2**128 - 1;
+
     // Fees are out of 10000, to allow for 0.01 - 9.99% fees.
     uint256 public devFee = 100; //1%
     uint256 public beanieHolderFee = 100; //1%
@@ -105,12 +111,10 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     uint256 public accruedAdminFeesEth;
     uint256 public accruedAdminFees;
 
-    address public TOKEN = 0xAcc15dC74880C9944775448304B263D191c6077F; //WGLMR
+    address public TOKEN = 0x722E8BdD2ce80A4422E880164f2079488e115365; //WETH, NOVA
     address public devAddress = 0x24312a0b911fE2199fbea92efab55e2ECCeC637D;
-    address public beanieHolderAddress =
-        0x6e0fa1dC8E3e6510aeBF14fCa3d83C77a9780ecB;
-    address public beanBuybackAddress =
-        0xE9b8258668E17AFA5D09de9F10381dE5565dbDc0;
+    address public beanieHolderAddress = 0x24312a0b911fE2199fbea92efab55e2ECCeC637D;
+    address public beanBuybackAddress = 0x24312a0b911fE2199fbea92efab55e2ECCeC637D;
 
     mapping(bytes32 => ListingPos) public posInListings;
     mapping(bytes32 => OfferPos) public posInOffers;
@@ -193,19 +197,20 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         uint256 expiry
     ) public {
         IERC721 token = IERC721(ca);
-        //FIXME: Is this necessary if contract has isApprovedForAll, since isApprovedForAll is called in context of msg.sender?
-        require(
-            msg.sender == token.ownerOf(tokenId),
-            "Only the owner of a token can list it."
-        );
-        require(price != 0, "Cannot set price to 0.");
-        require(
-            token.isApprovedForAll(msg.sender, address(this)),
-            "Marketplace not approved to handle this user's tokens."
-        );
+        if (msg.sender != token.ownerOf(tokenId)) 
+            revert BEANCallerNotOwner();
+        if (price == 0 || price > SMOL_MAX_INT) 
+            revert BEANBadPrice();
+        if (!token.isApprovedForAll(msg.sender, address(this))) 
+            revert BEANContractNotApproved();
+        if ((expiry != 0 && expiry < block.timestamp) || expiry > SMOL_MAX_INT) 
+            revert BEANBadExpiry();
 
+        //Generate unique listing hash, increment nonce.
         bytes32 listingHash = computeOrderHash(msg.sender, ca, tokenId, userNonces[msg.sender]);
+        unchecked {++userNonces[msg.sender]; }
 
+        //Store the new listing.
         listings[listingHash] = Listing(
             tokenId,
             uint128(price),
@@ -220,6 +225,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         listingsByLister[msg.sender].push(listingHash);
         listingsByContract[ca].push(listingHash);
 
+        //Index me baby
         emit TokenListed(
             ca,
             tokenId,
@@ -230,21 +236,15 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         );
     }
 
-    // Public wrapper around token delisting, requiring ownership to delist.
-    // Tokens that have passed their expiry can also be delisted by anyone, following a gas token pattern.
-    // TODO: can we make this non-indexer dependenet?
+    // Public wrapper around token delisting, requiring either ownership or invalidity to delist.
     function delistToken(bytes32 listingId) public {
         Listing memory listing = listings[listingId];
-        address owner = IERC721(listing.contractAddress).ownerOf(listing.tokenId);
-        //TODO: Fix negation here
-        if (
-            !(
-                msg.sender == owner ||
-                administrators[msg.sender] ||
-                listing.expiry > block.timestamp)
-        ) revert BEANOwnerNotApproved();
+        IERC721 token = IERC721(listing.contractAddress);
+        address tknOwner = token.ownerOf(listing.tokenId);
 
-        updateListingPos(listingId, owner, listing.contractAddress);
+        if (msg.sender != owner() && !administrators[msg.sender] && listing.expiry > block.timestamp) revert BEANOwnerNotApproved();
+
+        updateListingPos(listingId, tknOwner, listing.contractAddress);
 
         delete listings[listingId];
 
@@ -270,10 +270,11 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
             "The amount sent is less than the asking price."
         );
 
-        //get current NFT owner, verify approval
+        // verify that the listing is still valid
         address oldOwner = listing.lister;
-        //TODO: possible gas savings by reducing memory height
         IERC721 token = IERC721(listing.contractAddress);
+
+        if(oldOwner != token.ownerOf(listing.tokenId)) revert BEANListingNotActive();
 
         //effects - remove listing
         updateListingPos(listingId, oldOwner, listing.contractAddress);
@@ -423,24 +424,21 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         offerHashesByBuyer[user].push(offerHash);
     }
 
-    // Cancel an offer (escrowed or not). Could have gas issues if there's too many offers...
+     // Cancel an offer (escrowed or not).
     function cancelOffer(
         bytes32 offerHash,
         bool returnEscrow
     ) external nonReentrant {
         Offer memory offer = offers[offerHash];
-        //TODO: Test this because I always futz up my bools
-        if (
-            offer.offerer != msg.sender &&
-            !administrators[msg.sender] &&
-            offer.expiry < block.timestamp
-        ) revert BEANNotAuthorized();
-        if (offer.price == 0)
-            revert BEANNoCancellableOffer();
+        // Check the checks
+        if (offer.offerer != msg.sender && !administrators[msg.sender] && offer.expiry > block.timestamp ) revert BEANNotAuthorized();
+        if (offer.price == 0) revert BEANNoCancellableOffer();
 
+        // Remove the offer
         delete offers[offerHash];
         _updateOfferPos(offerHash, offer.offerer);
 
+        // Handle returning escrowed funds
         if (offer.escrowed && returnEscrow) {
             if (offer.price > totalInEscrow[offer.offerer])
                 revert BEANEscrowOverWithdraw();
@@ -519,7 +517,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     function _returnEscrow(address depositor, uint256 escrowAmount) private {
         totalEscrowedAmount -= escrowAmount;
         totalInEscrow[depositor] -= escrowAmount;
-        _sendEth(depositor, escrowAmount); 
+        _sendEth(depositor, escrowAmount);
     }
 
     // DEV FEE PROCESSING
@@ -838,15 +836,22 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         }
     }
 
-    //View-only function for frontend filtering -- probably want to use this with .map() + wagmi's useContractReads()
-    // function isValidListing(address ca, uint256 tokenId)
-    //     public
-    //     view
-    //     returns (bool isValid)
-    // {
-    //     isValid = (listings[ca][tokenId].price != 0 &&
-    //         IERC721(ca).ownerOf(tokenId) == listings[ca][tokenId].lister);
-    // }
+    // Validates a listing's current status. Checks price is != 0, original lister is current lister, 
+    // token is approved, and that expiry has not passed (or is 0).
+    function isValidListing(bytes32 listingHash)
+        public
+        view
+        returns (bool isValid)
+    {
+        Listing memory listing = listings[listingHash];
+        IERC721 token = IERC721(listing.contractAddress);
+        address tknOwner = token.ownerOf(listing.tokenId);
+        isValid = (listing.price != 0 && 
+                    token.ownerOf(listing.tokenId) == listing.lister &&
+                    token.isApprovedForAll(tknOwner, address(this)) &&
+                    (listing.expiry == 0 || (listing.expiry > block.timestamp))
+                    );
+    }
 
     function _sendEth(address _address, uint256 _amount) private {
         (bool success, ) = _address.call{value: _amount}("");
