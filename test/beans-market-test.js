@@ -679,7 +679,7 @@ describe("Beanie Market", function () {
 
     });
 
-    it.only("Fulfill non-escrow feesOn sends correct token amount, autosend off and then process", async function () {
+    it("Fulfill non-escrow feesOn sends correct token amount, autosend off and then process", async function () {
       const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeOffersFixture);
 
       await beanieMarket.connect(owner).setFeesOn(true);
@@ -757,9 +757,21 @@ describe("Beanie Market", function () {
 
     });
 
-    it("Cancel non-escrow offer", async function () {
+    it.only("Offerer can cancel non-escrow offer", async function () {
       const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeOffersFixture);
 
+      let addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
+      const addr2offersTail = await addr2offers[addr2offers.length - 1];
+
+      let offerHash = addr2offers[0];
+
+      await beanieMarket.connect(addrs[2]).cancelOffer(offerHash, false);
+
+      addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
+      
+      expect(addr2offers).to.not.contain(offerHash)
+      expect(await beanieMarket.posInOffers(addr2offersTail)).to.eql(BIG_ZERO);
+      expect(await beanieMarket.offers(offerHash)).to.eql([BIG_ZERO, BIG_ZERO, BIG_ZERO, ADDR_ZERO, ADDR_ZERO, false]);
     });
     
   });
