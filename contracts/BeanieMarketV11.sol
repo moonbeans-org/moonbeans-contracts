@@ -247,6 +247,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         if (!(msg.sender == owner() || administrators[msg.sender] || listing.expiry > block.timestamp)) revert BEANOwnerNotApproved();
 
         updateListingPos(listingId, tknOwner, listing.contractAddress);
+        delete currentListingOrderHash[listing.contractAddress][listing.tokenId];
         delete listings[listingId];
 
         emit TokenDelisted(
