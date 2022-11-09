@@ -78,7 +78,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         uint256 expiry,
         address buyer,
         bytes32 offerHash,
-        uint256 timestamp
+        address potentialSeller
     );
     event OfferCancelled(
         address indexed token,
@@ -357,7 +357,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         bytes32 offerHash = computeOrderHash(msg.sender, ca, tokenId, userNonces[msg.sender]);
         unchecked {++userNonces[msg.sender];}
         _storeOffer(offerHash, ca, msg.sender, tokenId, price, expiry, false);
-        emit OfferPlaced(ca, tokenId, price, expiry, msg.sender, offerHash, block.timestamp);
+        emit OfferPlaced(ca, tokenId, price, expiry, msg.sender, offerHash, IERC721(ca).ownerOf(tokenId));
     }
 
     // Make an escrowed offer (checks balance of bidder, then holds the bid in the contract as an escrow).
@@ -381,7 +381,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         unchecked {++userNonces[msg.sender];}
         _storeOffer(offerHash, ca, msg.sender, tokenId, price, expiry, true);
 
-        emit OfferPlaced(ca, tokenId, price, expiry, msg.sender, offerHash, block.timestamp);
+        emit OfferPlaced(ca, tokenId, price, expiry, msg.sender, offerHash, IERC721(ca).ownerOf(tokenId));
     }
 
     function computeOrderHash(
@@ -657,7 +657,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     function setCollectionOwnerFee(address ca, uint256 fee) external {
         bool verifiedCollectionOwner = collectionOwnersCanSetRoyalties &&
             (_msgSender() == collectionOwners[ca]);
-        require(_msgSender() == owner() || verifiedCollectionOwner);
+        require((_msgSender() == owner()) || verifiedCollectionOwner);
         require(fee <= 1000, "Max 10% fee");
         collectionOwnerFees[ca] = fee;
     }
