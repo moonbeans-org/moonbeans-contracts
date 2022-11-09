@@ -31,6 +31,14 @@ module.exports = {
     moonbeam: {
       url: "https://rpc.api.moonbeam.network",
       accounts: [process.env.PRIVATE_KEY ?? '']
+    },
+    arbitrumGoerli: {
+      url: "https://goerli-rollup.arbitrum.io/rpc",
+      accounts: [process.env.PRIVATE_KEY ?? '']
+    },
+    arbitrumNova: {
+      url: "https://nova.arbitrum.io/rpc",
+      accounts: [process.env.PRIVATE_KEY ?? '']
     }
   },
   gasReporter: {
@@ -42,7 +50,19 @@ module.exports = {
       mainnet: process.env.ETHERSCAN_API_KEY ?? "",
       moonriver: process.env.MOONRIVER_API_KEY ?? "",
       moonbaseAlpha:  process.env.MOONBASE_API_KEY ?? "",
-      moonbeam:  process.env.MOONBEAM_API_KEY ?? ""
-    }
+      moonbeam:  process.env.MOONBEAM_API_KEY ?? "",
+      arbitrumGoerli: process.env.ARBITRUM_GOERLI_API_KEY ?? "",
+      arbitrumNova: process.env.ARBITRUM_NOVA_API_KEY ?? "",
+    },
+    customChains: [
+      {
+        network: "arbitrumNova",
+        chainId: 42170,
+        urls: {
+          apiURL: "https://nova.arbitrum.io/rpc	",
+          browserURL: "https://nova.arbiscan.io"
+        }
+      }
+    ]
   },
 };

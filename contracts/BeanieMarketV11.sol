@@ -606,6 +606,27 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         return collectionOwnerFees[ca];
     }
 
+    // Validates a listing's current status. Checks price is != 0, original lister is current lister, 
+    // token is approved, and that expiry has not passed (or is 0).
+    function isValidListing(bytes32 listingHash)
+        public
+        view
+        returns (bool isValid)
+    {
+        Listing memory listing = listings[listingHash];
+        IERC721 token = IERC721(listing.contractAddress);
+        address tknOwner = token.ownerOf(listing.tokenId);
+        isValid = (listing.price != 0 && 
+                    token.ownerOf(listing.tokenId) == listing.lister &&
+                    token.isApprovedForAll(tknOwner, address(this)) &&
+                    (listing.expiry == 0 || (listing.expiry > block.timestamp))
+                    );
+    }
+
+    function isListed(bytes32 listingHash) external view returns (bool) {
+        return listings[listingHash].price != 0;
+    }
+
     // ADMIN FUNCTIONS
     function setAdmin(address admin, bool value) external onlyOwner {
         administrators[admin] = value;
@@ -836,23 +857,6 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         } else {
             _token.transferFrom(newOwner, oldOwner, price);
         }
-    }
-
-    // Validates a listing's current status. Checks price is != 0, original lister is current lister, 
-    // token is approved, and that expiry has not passed (or is 0).
-    function isValidListing(bytes32 listingHash)
-        public
-        view
-        returns (bool isValid)
-    {
-        Listing memory listing = listings[listingHash];
-        IERC721 token = IERC721(listing.contractAddress);
-        address tknOwner = token.ownerOf(listing.tokenId);
-        isValid = (listing.price != 0 && 
-                    token.ownerOf(listing.tokenId) == listing.lister &&
-                    token.isApprovedForAll(tknOwner, address(this)) &&
-                    (listing.expiry == 0 || (listing.expiry > block.timestamp))
-                    );
     }
 
     function _sendEth(address _address, uint256 _amount) private {
