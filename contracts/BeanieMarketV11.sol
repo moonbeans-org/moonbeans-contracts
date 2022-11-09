@@ -7,6 +7,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
+import "@openzeppelin/contracts/interfaces/IERC2981.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "./BeanUtils.sol";
 
@@ -38,13 +39,6 @@ error BEANBadExpiry();
 error BEANWithdrawNotEnabled();
 error BEANEscrowOverWithdraw();
 error BEANZeroInEscrow();
-
-/*
-    TODO questions:
-    Deprecate totalEscrowedAmount? Not necessary providing per-account escrow is robust.
-*/
-
-//Anyone can delist nfts that are not approved or have passed expiry
 
 contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     using BeanUtils for bytes32[];
@@ -104,9 +98,6 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     uint256 public defaultCollectionOwnerFee = 0; //0%
     uint256 public totalEscrowedAmount = 0;
 
-    // uint256 public accruedDevFees;
-    // uint256 public accruedBeanieFees;
-    // uint256 public accruedBeanieBuyback;
     uint256 public accruedAdminFeesEth;
     uint256 public accruedAdminFees;
 
@@ -235,7 +226,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         );
     }
 
-    // Public wrapper around token delisting, requiring either ownership or invalidity to delist.
+    // *Public* token delisting function, requiring either ownership OR invalidity to delist.
     function delistToken(bytes32 listingId) public {
         Listing memory listing = listings[listingId];
         IERC721 token = IERC721(listing.contractAddress);
@@ -646,7 +637,12 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     }
 
     // Convenience function for listing
-    function listCollection(address ca, bool tradingEnabled, address royaltyWallet, uint256 fee) external onlyAdmins {
+    function listCollection(address ca, bool tradingEnabled, address royaltyWallet, uint256 _fee) external onlyAdmins {
+        uint256 fee = _fee;
+        if (IERC165(ca).supportsInterface(0x2a55205a)) {
+            
+        }
+
         collectionTradingEnabled[ca] = tradingEnabled;
         collectionOwners[ca] = royaltyWallet;
         collectionOwnerFees[ca] = fee;
