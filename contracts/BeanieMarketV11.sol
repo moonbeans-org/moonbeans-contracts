@@ -201,6 +201,15 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         bytes32 listingHash = computeOrderHash(msg.sender, ca, tokenId, userNonces[msg.sender]);
         unchecked {++userNonces[msg.sender]; }
 
+        //Remove the old listing at contractAddress, tokenId. TODO: test
+        
+        bytes32 oldListingHash = currentListingOrderHash[ca][tokenId];
+        if (oldListingHash != bytes32(0)) {
+            Listing memory listing = listings[oldListingHash];
+            updateListingPos(oldListingHash, listing.lister, listing.contractAddress);
+            delete listings[oldListingHash];
+        }
+
         //Store the new listing.
         listings[listingHash] = Listing(
             tokenId,
@@ -209,12 +218,14 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
             ca,
             msg.sender
         );
+
         posInListings[listingHash] = ListingPos(
             uint128(listingsByLister[msg.sender].length),
             uint128(listingsByContract[ca].length)
         );
         listingsByLister[msg.sender].push(listingHash);
         listingsByContract[ca].push(listingHash);
+        currentListingOrderHash[ca][tokenId] = listingHash;
 
         //Index me baby
         emit TokenListed(
@@ -236,7 +247,6 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         if (!(msg.sender == owner() || administrators[msg.sender] || listing.expiry > block.timestamp)) revert BEANOwnerNotApproved();
 
         updateListingPos(listingId, tknOwner, listing.contractAddress);
-
         delete listings[listingId];
 
         emit TokenDelisted(
@@ -308,9 +318,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
 
     function updateListingPos(bytes32 listingId, address tknOwner, address listingAddress) internal {
         ListingPos memory listingPos_ = posInListings[listingId];
-        //TODO: Try scoping this for gas cost
         bytes32 offerHashToReplace;
-        //Cleanup accessory mappings. We pass the mapping results directly to the swapPop function to save memory height.\
         uint256 lastListerIndex = listingsByLister[tknOwner].length-1;
 
         offerHashToReplace = listingsByLister[tknOwner][lastListerIndex];
@@ -627,13 +635,16 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
                     );
     }
 
-    function isListed(bytes32 listingHash) external view returns (bool listingState) {
-        listingState = (listings[listingHash].price != 0);
-    }
-
     function isListed(address ca, uint256 tokenId) public view returns (bool listingState) {
         bytes32 listingHash = currentListingOrderHash[ca][tokenId];
-        listingState = (listings[listingHash].price != 0);
+        Listing memory listing = listings[listingHash];
+        IERC721 token = IERC721(listing.contractAddress);
+        address tknOwner = token.ownerOf(listing.tokenId);
+        listingState = (listing.price != 0 &&
+                    token.ownerOf(listing.tokenId) == listing.lister &&
+                    token.isApprovedForAll(tknOwner, address(this)) &&
+                    (listing.expiry == 0 || (listing.expiry > block.timestamp))
+                    );
     }
 
     function getCurrentListing(address ca, uint256 tokenId) public view returns (Listing memory listing) {

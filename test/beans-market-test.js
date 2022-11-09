@@ -365,7 +365,7 @@ describe("Beanie Market", function () {
 
       let devFeeAmount = ONE_ETH.mul(devFee).div(10000);
       let beanieHolderFeeAmount = ONE_ETH.mul(beanieHolderFee).div(10000);
-      let beanBuybackFeeAmount = ONE_ETH.mul(beanBuybackFee).div(10000).sub(1); //leaves 1 for gas savings
+      let beanBuybackFeeAmount = ONE_ETH.mul(beanBuybackFee).div(10000)
       let afterFeePrice = ONE_ETH.mul(totalFee).div(10000);
       
       //Check principal balances
@@ -416,7 +416,7 @@ describe("Beanie Market", function () {
     });
   });
 
-  describe("offers", function () {
+  describe("non-escrow offers", function () {
     it("Make non-escrow offer", async function () {
       const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndNFTFixture);
 
@@ -757,7 +757,7 @@ describe("Beanie Market", function () {
 
     });
 
-    it.only("Offerer can cancel non-escrow offer", async function () {
+    it("Offerer can cancel non-escrow offer", async function () {
       const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeOffersFixture);
 
       let addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
@@ -773,6 +773,10 @@ describe("Beanie Market", function () {
       expect(await beanieMarket.posInOffers(addr2offersTail)).to.eql(BIG_ZERO);
       expect(await beanieMarket.offers(offerHash)).to.eql([BIG_ZERO, BIG_ZERO, BIG_ZERO, ADDR_ZERO, ADDR_ZERO, false]);
     });
+  });
+  describe("non-escrow offers", function () {
+    it("Make non-escrow offer", async function () {
     
+    });
   });
 });
