@@ -148,6 +148,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     mapping(bytes32 => Listing) public listings;
     mapping(address => bytes32[]) public listingsByLister;
     mapping(address => bytes32[]) public listingsByContract;
+    mapping(address => mapping(uint256 => bytes32)) public currentListingOrderHash;
 
     mapping(bytes32 => Offer) public offers;
     mapping(address => bytes32[]) public offerHashesByBuyer;
@@ -635,8 +636,18 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
                     );
     }
 
-    function isListed(bytes32 listingHash) external view returns (bool) {
-        return listings[listingHash].price != 0;
+    function isListed(bytes32 listingHash) external view returns (bool listingState) {
+        listingState = (listings[listingHash].price != 0);
+    }
+
+    function isListed(address ca, uint256 tokenId) public view returns (bool listingState) {
+        bytes32 listingHash = currentListingOrderHash[ca][tokenId];
+        listingState = (listings[listingHash].price != 0);
+    }
+
+    function getCurrentListing(address ca, uint256 tokenId) public view returns (Listing memory listing) {
+        bytes32 listingHash = currentListingOrderHash[ca][tokenId];
+        listing = listings[listingHash];
     }
 
     // ADMIN FUNCTIONS
