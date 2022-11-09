@@ -103,7 +103,6 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     uint256 public beanBuybackFee = 100; //1%
     uint256 public defaultCollectionOwnerFee = 0; //0%
     uint256 public totalEscrowedAmount = 0;
-    uint256 public specialTaxGas = 100000;
 
     // uint256 public accruedDevFees;
     // uint256 public accruedBeanieFees;
@@ -113,8 +112,8 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
 
     address public TOKEN = 0x722E8BdD2ce80A4422E880164f2079488e115365; //WETH, NOVA
     address public devAddress = 0x24312a0b911fE2199fbea92efab55e2ECCeC637D;
-    address public beanieHolderAddress = 0x24312a0b911fE2199fbea92efab55e2ECCeC637D;
-    address public beanBuybackAddress = 0x24312a0b911fE2199fbea92efab55e2ECCeC637D;
+    address public beanieHolderAddress = 0x0000000000000000000000000000000000000001;
+    address public beanBuybackAddress = 0x0000000000000000000000000000000000000002;
 
     mapping(bytes32 => ListingPos) public posInListings;
     mapping(bytes32 => OfferPos) public posInOffers;
@@ -625,6 +624,13 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         tradingPaused = value;
     }
 
+    // Convenience function for listing
+    function listCollection(address ca, bool tradingEnabled, address royaltyWallet, uint256 fee) external onlyAdmins {
+        collectionTradingEnabled[ca] = tradingEnabled;
+        collectionOwners[ca] = royaltyWallet;
+        collectionOwnerFees[ca] = fee;
+    }
+
     function setCollectionTrading(address ca, bool value) external onlyAdmins {
         require(
             collectionTradingEnabled[ca] != value,
@@ -675,10 +681,6 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
 
     function setBeanBuybackAddress(address _address) external onlyOwner {
         beanBuybackAddress = _address;
-    }
-
-    function setSpecialGasTax(uint256 gasAmount) external onlyOwner {
-        specialTaxGas = gasAmount;
     }
 
     function setFeesOn(bool _value) external onlyOwner {
