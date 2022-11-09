@@ -33,7 +33,8 @@ describe("Beanie Market", function () {
     await beanieMarket.connect(owner).setCollectionOwner(dummyNFT.address, addrs[5].address);;
     await beanieMarket.connect(owner).setCollectionOwnerFee(dummyNFT.address, 100); //1% fee
 
-    const now = await ethers.provider.getBlockNumber();
+    const block = await ethers.provider.getBlock();
+    const now = block['timestamp']
 
     return { beanieMarket, dummyNFT, paymentToken, owner, addrs, now };
   }
@@ -43,7 +44,7 @@ describe("Beanie Market", function () {
 
     await dummyNFT.connect(addrs[0]).setApprovalForAll(beanieMarket.address, true);
     await dummyNFT.connect(addrs[1]).setApprovalForAll(beanieMarket.address, true);
-
+    console.log(now);
     await beanieMarket.connect(addrs[0]).listToken(dummyNFT.address, 1, ONE_ETH, now + 10);
     await beanieMarket.connect(addrs[0]).listToken(dummyNFT.address, 2, ONE_ETH, now + 100);
     await beanieMarket.connect(addrs[0]).listToken(dummyNFT.address, 3, ONE_ETH, now + 100);
@@ -509,32 +510,32 @@ describe("Beanie Market", function () {
       expect(await dummyNFT.ownerOf(offer1Data.tokenId)).to.equal(offer1Data.offerer);
     });
 
-    // it.only("Fulfill non-escrow offer update storage structures", async function () {
-    //   const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeOffersFixture);
+    it("Fulfill non-escrow offer update storage structures", async function () {
+      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeOffersFixture);
 
-    //   let addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
-    //   let addr3offers = await beanieMarket.getOffersByOfferer(addrs[3].address);
+      let addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
+      let addr3offers = await beanieMarket.getOffersByOfferer(addrs[3].address);
       
-    //   const addr2offersTail = await addr2offers[addr2offers.length - 1];
-    //   const addr3offersTail = await addr3offers[addr3offers.length - 1];
+      const addr2offersTail = await addr2offers[addr2offers.length - 1];
+      const addr3offersTail = await addr3offers[addr3offers.length - 1];
 
-    //   const offer0Hash = addr2offers[0];
-    //   const offer0Data = await beanieMarket.offers(addr2offers[0]);
-    //   const offer1Hash = addr3offers[1];
-    //   const offer1Data = await beanieMarket.offers(addr3offers[1]);
+      const offer0Hash = addr2offers[0];
+      const offer0Data = await beanieMarket.offers(addr2offers[0]);
+      const offer1Hash = addr3offers[1];
+      const offer1Data = await beanieMarket.offers(addr3offers[1]);
 
-    //   await dummyNFT.connect(addrs[0]).setApprovalForAll(beanieMarket.address, true);
-    //   await beanieMarket.connect(addrs[0]).acceptOffer(offer0Hash);
-    //   await beanieMarket.connect(addrs[0]).acceptOffer(offer1Hash);
+      await dummyNFT.connect(addrs[0]).setApprovalForAll(beanieMarket.address, true);
+      await beanieMarket.connect(addrs[0]).acceptOffer(offer0Hash);
+      await beanieMarket.connect(addrs[0]).acceptOffer(offer1Hash);
 
-    //   addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
-    //   addr3offers = await beanieMarket.getOffersByOfferer(addrs[3].address);
-    //   expect(addr2offers).to.not.contain(offer0Hash)
-    //   expect(addr3offers).to.not.contain(offer1Hash)
+      addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
+      addr3offers = await beanieMarket.getOffersByOfferer(addrs[3].address);
+      expect(addr2offers).to.not.contain(offer0Hash)
+      expect(addr3offers).to.not.contain(offer1Hash)
 
-    //   expect(await beanieMarket.posInOffers(addr2offersTail)).to.eql(BIG_ZERO);
+      expect(await beanieMarket.posInOffers(addr2offersTail)).to.eql(BIG_ZERO);
 
-    // });
+    });
 
     it("Fulfill non-escrow offer update storage structures (single length array)", async function () {
       const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeOffersFixture);
