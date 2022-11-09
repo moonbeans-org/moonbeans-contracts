@@ -517,27 +517,27 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         uint256 denominator = devFee + beanieHolderFee + beanBuybackFee;
         uint256 devFeeAmount = accruedAdminFeesEth * devFee / denominator;
         uint256 beanieFeeAmount = accruedAdminFeesEth * beanieHolderFee / denominator;
-        uint256 beanieBuybackAmount = ((accruedAdminFeesEth - devFeeAmount) - beanieFeeAmount) - 1;
-        _processDevFeesEth(devFeeAmount, beanieFeeAmount, beanieBuybackAmount);
+        uint256 beanBuybackAmount = ((accruedAdminFeesEth - devFeeAmount) - beanieFeeAmount) - 1;
+        _processDevFeesEth(devFeeAmount, beanieFeeAmount, beanBuybackAmount);
     }
 
     function _accrueDevFeesEth(
         uint256 devAmount,
         uint256 beanieHolderAmount,
-        uint256 beanieBuybackAmount
+        uint256 beanBuybackAmount
     ) private {
-        uint256 accruedFees = devAmount + beanieHolderAmount + beanieBuybackAmount;
+        uint256 accruedFees = devAmount + beanieHolderAmount + beanBuybackAmount;
         accruedAdminFeesEth += accruedFees;
     }
 
     function _processDevFeesEth(
         uint256 devAmount,
         uint256 beanieHolderAmount,
-        uint256 beanieBuybackAmount
+        uint256 beanBuybackAmount
     ) private {
-        _sendEth(devAddress, devAmount);
-        _sendEth(beanieHolderAddress, beanieHolderAmount);
-        _sendEth(beanBuybackAddress, beanieBuybackAmount);
+        if (devAmount != 0 ) _sendEth(devAddress, devAmount);
+        if (beanieHolderAmount != 0 ) _sendEth(beanieHolderAddress, beanieHolderAmount);
+        if (beanBuybackAmount != 0 ) _sendEth(beanBuybackAddress, beanBuybackAmount);
     }
 
     //Leave 1 accrued fees slot for gas savings
@@ -545,17 +545,17 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         uint256 denominator = devFee + beanieHolderFee + beanBuybackFee;
         uint256 devFeeAmount = accruedAdminFees * devFee / denominator;
         uint256 beanieFeeAmount = accruedAdminFees * beanieHolderFee / denominator;
-        uint256 beanieBuybackAmount = ((accruedAdminFees - devFeeAmount) - beanieFeeAmount) - 1;
-        _processDevFees(address(this), devFeeAmount, beanieFeeAmount, beanieBuybackAmount);
+        uint256 beanBuybackAmount = ((accruedAdminFees - devFeeAmount) - beanieFeeAmount) - 1;
+        _processDevFees(address(this), devFeeAmount, beanieFeeAmount, beanBuybackAmount);
     }
 
     function _accrueDevFees(
         address from,
         uint256 devAmount,
         uint256 beanieHolderAmount,
-        uint256 beanieBuybackAmount
+        uint256 beanBuybackAmount
     ) private {
-        uint256 accruedFees = devAmount + beanieHolderAmount + beanieBuybackAmount;
+        uint256 accruedFees = devAmount + beanieHolderAmount + beanBuybackAmount;
         IERC20(TOKEN).transferFrom(from, address(this), accruedFees);
         accruedAdminFees += accruedFees;
     }
@@ -564,11 +564,11 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         address from,
         uint256 devAmount,
         uint256 beanieHolderAmount,
-        uint256 beanieBuybackAmount
+        uint256 beanBuybackAmount
     ) private {
-        IERC20(TOKEN).transferFrom(from, devAddress, devAmount);
-        IERC20(TOKEN).transferFrom(from, beanieHolderAddress, beanieHolderAmount);
-        IERC20(TOKEN).transferFrom(from, beanBuybackAddress, beanieBuybackAmount);
+        if (devAmount != 0 ) IERC20(TOKEN).transferFrom(from, devAddress, devAmount);
+        if (beanieHolderAmount != 0 ) IERC20(TOKEN).transferFrom(from, beanieHolderAddress, beanieHolderAmount);
+        if (beanBuybackAmount != 0 ) IERC20(TOKEN).transferFrom(from, beanBuybackAddress, beanBuybackAmount);
     }
 
     // OTHER PUBLIC FUNCTIONS
@@ -637,10 +637,13 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     }
 
     // Convenience function for listing
-    function listCollection(address ca, bool tradingEnabled, address royaltyWallet, uint256 _fee) external onlyAdmins {
+    function listCollection(address ca, bool tradingEnabled, address _royaltyWallet, uint256 _fee) external onlyAdmins {
         uint256 fee = _fee;
+        address royaltyWallet = _royaltyWallet;
         if (IERC165(ca).supportsInterface(0x2a55205a)) {
-            
+            (address receiver, uint256 royaltyAmount) = IERC2981(ca).royaltyInfo(1, 1 ether);
+            royaltyWallet = receiver;
+            fee = (10000 * royaltyAmount / 1 ether) >= 1000 ? 1000 : 10000 * royaltyAmount / 1 ether;
         }
 
         collectionTradingEnabled[ca] = tradingEnabled;
