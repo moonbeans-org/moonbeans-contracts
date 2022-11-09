@@ -110,7 +110,7 @@ describe("Beanie Market", function () {
     });
   })
 
-  describe("Listings", function () {
+  describe.only("Listings", function () {
     it("List token and updated storage structures", async function () {
       const { beanieMarket, dummyNFT, owner, addrs, now } = await loadFixture(deployMarketAndNFTFixture);
       const address0 = addrs[0];
@@ -133,9 +133,7 @@ describe("Beanie Market", function () {
           ONE_ETH,
           ethers.BigNumber.from(now+10),
           dummyNFT.address,
-          addrs[0].address,
-          0,
-          0
+          addrs[0].address
         ]
       )
 
@@ -151,9 +149,7 @@ describe("Beanie Market", function () {
           ONE_ETH,
           ethers.BigNumber.from(now+100),
           dummyNFT.address,
-          addrs[0].address,
-          1,
-          1
+          addrs[0].address
         ]
       )
 
@@ -169,9 +165,7 @@ describe("Beanie Market", function () {
           ONE_ETH,
           ethers.BigNumber.from(now+1000),
           dummyNFT.address,
-          addrs[1].address,
-          0,
-          2
+          addrs[1].address
         ]
       )
 
@@ -207,10 +201,9 @@ describe("Beanie Market", function () {
       expect(listingsByLister1).to.not.contain(listingToFulfill)
 
       const listingTailLister = await listingsByLister0[listingsByLister0.length - 1];
-      const listingTailContract = await listingsByLister0[listingsByLister0.length - 1];
+      const listingTailContract = await listingsByContract[listingsByContract.length - 1];
 
       //Fulfill listing
-
       await beanieMarket.connect(addrs[1]).fulfillListing(listingToFulfill, addrs[1].address, {value: ONE_ETH});
       expect(await dummyNFT.ownerOf(1)).to.equal(addrs[1].address);
       
@@ -227,26 +220,26 @@ describe("Beanie Market", function () {
       expect(listingsByContract).to.not.contain(listingToFulfill)
 
       //Check to see if new listingsByLister and listingsByContract is correct
-      expect((await beanieMarket.listings(listingTailLister)).posInListingsByLister).to.equal(0);
-      expect((await beanieMarket.listings(listingTailContract)).posInListingsByContract).to.equal(0);
+      expect((await beanieMarket.posInListings(listingTailLister)).posInListingsByLister).to.eql(BIG_ZERO);
+      expect((await beanieMarket.posInListings(listingTailContract)).posInListingsByContract).to.eql(BIG_ZERO);
 
       //Make sure old listing entry has been removed
-      expect(await beanieMarket.listings(listingToFulfill)).to.eql([BIG_ZERO, BIG_ZERO, BIG_ZERO, ADDR_ZERO, ADDR_ZERO, 0, 0]);
+      expect(await beanieMarket.listings(listingToFulfill)).to.eql([BIG_ZERO, BIG_ZERO, BIG_ZERO, ADDR_ZERO, ADDR_ZERO]);
+      expect(await beanieMarket.posInListings(listingToFulfill)).to.eql([BIG_ZERO, BIG_ZERO]);
     });
 
-    it.only("Fulfill listing updates storage structures (single-length listing array)", async function () {
+    it("Fulfill listing updates storage structures (single-length listing array)", async function () {
       const { beanieMarket, dummyNFT, owner, addrs, now } = await loadFixture(deployMarketAndListNFTsFixture);
       const address0 = addrs[0];
 
-      expect(await dummyNFT.ownerOf(1)).to.equal(addrs[0].address);
+      expect(await dummyNFT.ownerOf(11)).to.equal(addrs[1].address);
       const listingIds = await beanieMarket.getListingsByLister(addrs[1].address);
       const listingToFulfill = listingIds[0];
 
-      //Fulfill listing
-
-      await beanieMarket.connect(addrs[1]).fulfillListing(listingToFulfill, addrs[1].address, {value: ONE_ETH});
-      expect(await dummyNFT.ownerOf(1)).to.equal(addrs[1].address);
-      
+      await beanieMarket.connect(addrs[1]).fulfillListing(listingToFulfill, addrs[2].address, {value: ONE_ETH});
+      expect(await dummyNFT.ownerOf(11)).to.equal(addrs[2].address);
+      expect(await beanieMarket.listings(listingToFulfill)).to.eql([BIG_ZERO, BIG_ZERO, BIG_ZERO, ADDR_ZERO, ADDR_ZERO]);
+      expect(await beanieMarket.posInListings(listingToFulfill)).to.eql([BIG_ZERO, BIG_ZERO]);
     });
 
     it("Fulfill listing feesOff sends correct eth amount", async function () {
@@ -397,6 +390,9 @@ describe("Beanie Market", function () {
       let listingsByLister0 = await beanieMarket.getListingsByLister(addrs[0].address);
       let listingsByLister1 = await beanieMarket.getListingsByLister(addrs[1].address);
       let listingsByContract = await beanieMarket.getListingsByContract(dummyNFT.address);
+      expect(listingsByLister0.length).to.equal(4)
+      expect(listingsByLister1.length).to.equal(1)
+      expect(listingsByContract.length).to.equal(5)
 
       const listingTailLister = await listingsByLister0[listingsByLister0.length - 1];
       const listingTailContract = await listingsByLister0[listingsByLister0.length - 1];
@@ -415,9 +411,8 @@ describe("Beanie Market", function () {
       expect(listingsByContract.length).to.equal(4)
 
       //Check to see if new listingsByLister and listingsByContract is correct
-      expect((await beanieMarket.listings(listingTailLister)).posInListingsByLister).to.equal(0);
-      expect((await beanieMarket.listings(listingTailContract)).posInListingsByContract).to.equal(0);
-      
+      expect(await beanieMarket.listings(listingToDelist)).to.eql([BIG_ZERO, BIG_ZERO, BIG_ZERO, ADDR_ZERO, ADDR_ZERO]);
+      expect(await beanieMarket.posInListings(listingToDelist)).to.eql([BIG_ZERO, BIG_ZERO]);
     });
   });
 
