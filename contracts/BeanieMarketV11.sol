@@ -7,6 +7,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
+import "@openzeppelin/contracts/interfaces/IERC2981.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "./BeanUtils.sol";
 
@@ -38,13 +39,6 @@ error BEANBadExpiry();
 error BEANWithdrawNotEnabled();
 error BEANEscrowOverWithdraw();
 error BEANZeroInEscrow();
-
-/*
-    TODO questions:
-    Deprecate totalEscrowedAmount? Not necessary providing per-account escrow is robust.
-*/
-
-//Anyone can delist nfts that are not approved or have passed expiry
 
 contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     using BeanUtils for bytes32[];
@@ -104,9 +98,6 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     uint256 public defaultCollectionOwnerFee = 0; //0%
     uint256 public totalEscrowedAmount = 0;
 
-    // uint256 public accruedDevFees;
-    // uint256 public accruedBeanieFees;
-    // uint256 public accruedBeanieBuyback;
     uint256 public accruedAdminFeesEth;
     uint256 public accruedAdminFees;
 
@@ -120,7 +111,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
 
     struct ListingPos {
         uint128 posInListingsByLister;
-        uint128 posInListingsByContract; 
+        uint128 posInListingsByContract;
     }
 
     struct OfferPos {
@@ -197,13 +188,13 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         uint256 expiry
     ) public {
         IERC721 token = IERC721(ca);
-        if (msg.sender != token.ownerOf(tokenId)) 
+        if (msg.sender != token.ownerOf(tokenId))
             revert BEANCallerNotOwner();
-        if (price == 0 || price > SMOL_MAX_INT) 
+        if (price == 0 || price > SMOL_MAX_INT)
             revert BEANBadPrice();
-        if (!token.isApprovedForAll(msg.sender, address(this))) 
+        if (!token.isApprovedForAll(msg.sender, address(this)))
             revert BEANContractNotApproved();
-        if ((expiry != 0 && expiry < block.timestamp) || expiry > SMOL_MAX_INT) 
+        if ((expiry != 0 && expiry < block.timestamp) || expiry > SMOL_MAX_INT)
             revert BEANBadExpiry();
 
         //Generate unique listing hash, increment nonce.
@@ -236,7 +227,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         );
     }
 
-    // Public wrapper around token delisting, requiring either ownership or invalidity to delist.
+    // *Public* token delisting function, requiring either ownership OR invalidity to delist.
     function delistToken(bytes32 listingId) public {
         Listing memory listing = listings[listingId];
         IERC721 token = IERC721(listing.contractAddress);
@@ -327,7 +318,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         if (listingsByLister[tknOwner].length > 0) {
             posInListings[offerHashToReplace].posInListingsByLister = listingPos_.posInListingsByLister;
         }
-        
+
         uint256 lastContractIndex = listingsByContract[listingAddress].length-1;
 
         offerHashToReplace = listingsByContract[listingAddress][lastContractIndex];
@@ -377,7 +368,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
 
         totalEscrowedAmount += msg.value;
         totalInEscrow[msg.sender] += msg.value;
-        
+
         bytes32 offerHash = computeOrderHash(msg.sender, ca, tokenId, userNonces[msg.sender]);
         unchecked {++userNonces[msg.sender];}
         _storeOffer(offerHash, ca, msg.sender, tokenId, price, expiry, true);
@@ -451,12 +442,12 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         bytes32 offerHash
     ) external nonReentrant {
 
-        if (tradingPaused) 
+        if (tradingPaused)
             revert BEANTradingPaused();
 
         Offer memory offer = offers[offerHash];
         IERC721 _nft = IERC721(offer.contractAddress);
-        
+
         if (offer.expiry < block.timestamp)
             revert BEANOrderExpired();
         if(msg.sender != _nft.ownerOf(offer.tokenId))
@@ -465,7 +456,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
             revert BEANCollectionNotEnabled();
 
         delete offers[offerHash];
-        
+
         _updateOfferPos(offerHash, offer.offerer);
 
         // Actually perform trade
@@ -535,20 +526,20 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     function _accrueDevFeesEth(
         uint256 devAmount,
         uint256 beanieHolderAmount,
-        uint256 beanieBuybackAmount
+        uint256 beanBuybackAmount
     ) private {
-        uint256 accruedFees = devAmount + beanieHolderAmount + beanieBuybackAmount;
+        uint256 accruedFees = devAmount + beanieHolderAmount + beanBuybackAmount;
         accruedAdminFeesEth += accruedFees;
     }
 
     function _processDevFeesEth(
         uint256 devAmount,
         uint256 beanieHolderAmount,
-        uint256 beanieBuybackAmount
+        uint256 beanBuybackAmount
     ) private {
-        _sendEth(devAddress, devAmount);
-        _sendEth(beanieHolderAddress, beanieHolderAmount);
-        _sendEth(beanBuybackAddress, beanieBuybackAmount);
+        if (devAmount != 0 ) _sendEth(devAddress, devAmount);
+        if (beanieHolderAmount != 0 ) _sendEth(beanieHolderAddress, beanieHolderAmount);
+        if (beanBuybackAmount != 0 ) _sendEth(beanBuybackAddress, beanBuybackAmount);
     }
 
     //Leave 1 accrued fees slot for gas savings
@@ -565,9 +556,9 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         address from,
         uint256 devAmount,
         uint256 beanieHolderAmount,
-        uint256 beanieBuybackAmount
+        uint256 beanBuybackAmount
     ) private {
-        uint256 accruedFees = devAmount + beanieHolderAmount + beanieBuybackAmount;
+        uint256 accruedFees = devAmount + beanieHolderAmount + beanBuybackAmount;
         IERC20(TOKEN).transferFrom(from, address(this), accruedFees);
         accruedAdminFees += accruedFees;
     }
@@ -586,11 +577,11 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         address from,
         uint256 devAmount,
         uint256 beanieHolderAmount,
-        uint256 beanieBuybackAmount
+        uint256 beanBuybackAmount
     ) private {
-        IERC20(TOKEN).transferFrom(from, devAddress, devAmount);
-        IERC20(TOKEN).transferFrom(from, beanieHolderAddress, beanieHolderAmount);
-        IERC20(TOKEN).transferFrom(from, beanBuybackAddress, beanieBuybackAmount);
+        if (devAmount != 0 ) IERC20(TOKEN).transferFrom(from, devAddress, devAmount);
+        if (beanieHolderAmount != 0 ) IERC20(TOKEN).transferFrom(from, beanieHolderAddress, beanieHolderAmount);
+        if (beanBuybackAmount != 0 ) IERC20(TOKEN).transferFrom(from, beanBuybackAddress, beanBuybackAmount);
     }
 
     // OTHER PUBLIC FUNCTIONS
@@ -619,7 +610,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         return collectionOwnerFees[ca];
     }
 
-    // Validates a listing's current status. Checks price is != 0, original lister is current lister, 
+    // Validates a listing's current status. Checks price is != 0, original lister is current lister,
     // token is approved, and that expiry has not passed (or is 0).
     function isValidListing(bytes32 listingHash)
         public
@@ -629,7 +620,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         Listing memory listing = listings[listingHash];
         IERC721 token = IERC721(listing.contractAddress);
         address tknOwner = token.ownerOf(listing.tokenId);
-        isValid = (listing.price != 0 && 
+        isValid = (listing.price != 0 &&
                     token.ownerOf(listing.tokenId) == listing.lister &&
                     token.isApprovedForAll(tknOwner, address(this)) &&
                     (listing.expiry == 0 || (listing.expiry > block.timestamp))
@@ -669,7 +660,15 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     }
 
     // Convenience function for listing
-    function listCollection(address ca, bool tradingEnabled, address royaltyWallet, uint256 fee) external onlyAdmins {
+    function listCollection(address ca, bool tradingEnabled, address _royaltyWallet, uint256 _fee) external onlyAdmins {
+        uint256 fee = _fee;
+        address royaltyWallet = _royaltyWallet;
+        if (IERC165(ca).supportsInterface(0x2a55205a)) {
+            (address receiver, uint256 royaltyAmount) = IERC2981(ca).royaltyInfo(1, 1 ether);
+            royaltyWallet = receiver;
+            fee = (10000 * royaltyAmount / 1 ether) >= 1000 ? 1000 : 10000 * royaltyAmount / 1 ether;
+        }
+
         collectionTradingEnabled[ca] = tradingEnabled;
         collectionOwners[ca] = royaltyWallet;
         collectionOwnerFees[ca] = fee;
