@@ -72,30 +72,26 @@ describe("Beanie Market", function () {
     await beanieMarket.connect(addrs[2]).makeEscrowedOffer(
       dummyNFT.address,
       1,
-      ONE_ETH,
       now + 10,
       {value: ONE_ETH}
     );
     await beanieMarket.connect(addrs[2]).makeEscrowedOffer(
       dummyNFT.address,
       2,
-      ONE_ETH.mul(2),
       now + 1000,
       {value: ONE_ETH.mul(2)}
     );
     await beanieMarket.connect(addrs[2]).makeEscrowedOffer(
       dummyNFT.address,
       3,
-      ONE_ETH.mul(3),
       now + 100,
       {value: ONE_ETH.mul(3)}
     );
     await beanieMarket.connect(addrs[3]).makeEscrowedOffer(
       dummyNFT.address,
       3,
-      ONE_ETH.mul(3),
       now + 100,
-      {value: ONE_ETH.mul(3)}
+      {value: ONE_ETH}
     );
 
     return { beanieMarket, dummyNFT, paymentToken, owner, addrs, now };
@@ -774,9 +770,93 @@ describe("Beanie Market", function () {
       expect(await beanieMarket.offers(offerHash)).to.eql([BIG_ZERO, BIG_ZERO, BIG_ZERO, ADDR_ZERO, ADDR_ZERO, false]);
     });
   });
-  describe("non-escrow offers", function () {
-    it("Make non-escrow offer", async function () {
-    
+
+  describe.only("escrow offers", function () {
+    it("Make escrow offer", async function () {
+      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndNFTFixture);
+
+      //Check the storage structures of several listings. We do this for two different lister addresses to test.
+      //TODO: maybe add a second contract address.
+      await beanieMarket.connect(addrs[2]).makeEscrowedOffer(dummyNFT.address, 1, now + 10, {value: ONE_ETH}); // offer1
+
+      const addr2Offers_1 = await beanieMarket.getOffersByOfferer(addrs[2].address)
+      expect(addr2Offers_1.length).to.equal(1);
+
+      //same params, make sure it works
+      await beanieMarket.connect(addrs[2]).makeEscrowedOffer(dummyNFT.address, 1, now + 10, {value: ONE_ETH});
+      const addr2Offers_2 = await beanieMarket.getOffersByOfferer(addrs[2].address)
+      expect(addr2Offers_2.length).to.equal(2);
+      expect(addr2Offers_2[0]).to.not.equal(addr2Offers_2[1]);
+
+      //Offer for a different token
+      await beanieMarket.connect(addrs[2]).makeEscrowedOffer(dummyNFT.address, 2, now + 100, {value: ONE_ETH.mul(2)}); //offer2
+      const addr2Offers_3 = await beanieMarket.getOffersByOfferer(addrs[2].address)
+      expect(addr2Offers_3.length).to.equal(3);
+
+      //3rd account makes an offer
+      await beanieMarket.connect(addrs[3]).makeEscrowedOffer(dummyNFT.address, 1, now + 1000, {value: ONE_ETH}); //offer3
+      const addr3Offers_1 = await beanieMarket.getOffersByOfferer(addrs[3].address);
+      expect(addr3Offers_1.length).to.equal(1);
+
+      const offer1 = await beanieMarket.offers(addr2Offers_3[0]);
+      const offer2 = await beanieMarket.offers(addr2Offers_3[2]);
+      const offer3 = await beanieMarket.offers(addr3Offers_1[0]);
+
+      expect(offer1).to.eql(
+        [
+          ethers.BigNumber.from(1),
+          ONE_ETH,
+          ethers.BigNumber.from(now + 10),
+          dummyNFT.address,
+          addrs[2].address,
+          true
+        ]
+      )
+
+      expect(offer2).to.eql(
+        [
+          ethers.BigNumber.from(2),
+          ONE_ETH.mul(2),
+          ethers.BigNumber.from(now + 100),
+          dummyNFT.address,
+          addrs[2].address,
+          true
+        ]
+      )
+
+      expect(offer3).to.eql(
+        [
+          ethers.BigNumber.from(1),
+          ONE_ETH,
+          ethers.BigNumber.from(now + 1000),
+          dummyNFT.address,
+          addrs[3].address,
+          true
+        ]
+      )
     });
+
+    it.only("Fulfill escrow offer ownership change", async function () {
+      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
+
+      const addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
+      const addr3offers = await beanieMarket.getOffersByOfferer(addrs[3].address);
+
+      const offer0Hash = addr2offers[0];
+      const offer0Data = await beanieMarket.offers(addr2offers[0]);
+      const offer0OldOwner = await dummyNFT.ownerOf(offer0Data.tokenId);
+
+      await dummyNFT.connect(addrs[0]).setApprovalForAll(beanieMarket.address, true);
+      await beanieMarket.connect(addrs[0]).acceptOffer(offer0Hash);
+      expect(await dummyNFT.ownerOf(offer0Data.tokenId)).to.equal(offer0Data.offerer);
+
+      // const offer1Hash = addr3offers[1];
+      // const offer1Data = await beanieMarket.offers(addr3offers[1]);
+      // const offer1OldOwner = await dummyNFT.ownerOf(offer1Data.tokenId);
+
+      // await beanieMarket.connect(addrs[0]).acceptOffer(offer1Hash);
+      // expect(await dummyNFT.ownerOf(offer1Data.tokenId)).to.equal(offer1Data.offerer);
+    });
+
   });
 });

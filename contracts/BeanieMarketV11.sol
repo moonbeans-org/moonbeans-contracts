@@ -365,18 +365,14 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     function makeEscrowedOffer(
         address ca,
         uint256 tokenId,
-        uint256 price,
         uint256 expiry
     ) public payable nonReentrant {
-        //FIXME: Can probably remove this. Trivial workaround having a second wallet.
-        // require(msg.sender != IERC721(ca).ownerOf(tokenId), "Can not bid on your own NFT.");
+        uint256 price = msg.value;
         if (price == 0)
             revert BEANZeroPrice();
-        if ((totalInEscrow[msg.sender] + msg.value) < price)
-            revert BEANNotEnoughInEscrow();
 
-        totalEscrowedAmount += msg.value;
-        totalInEscrow[msg.sender] += msg.value;
+        totalEscrowedAmount += price;
+        totalInEscrow[msg.sender] += price;
 
         bytes32 offerHash = computeOrderHash(msg.sender, ca, tokenId, userNonces[msg.sender]);
         unchecked {++userNonces[msg.sender];}
@@ -465,7 +461,6 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
             revert BEANCollectionNotEnabled();
 
         delete offers[offerHash];
-
         _updateOfferPos(offerHash, offer.offerer);
 
         // Actually perform trade
@@ -825,7 +820,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         uint256 price,
         address payable oldOwner,
         address payable newOwner
-    ) private nonReentrant {
+    ) private {
         require(
             totalInEscrow[newOwner] >= price,
             "Buyer does not have enough money in escrow."
@@ -835,10 +830,8 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         //update escrow amounts
         totalInEscrow[newOwner] -= price;
         totalEscrowedAmount -= price;
-
         //swippity swappity
         _nft.safeTransferFrom(oldOwner, newOwner, tokenId);
-
         //fees
         if (feesOn) {
             //calculate fees
