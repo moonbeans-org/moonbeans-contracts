@@ -772,7 +772,7 @@ describe("Beanie Market", function () {
     });
   });
 
-  describe.only("escrow offers", function () {
+  describe("escrow offers", function () {
     it("Make escrow offer", async function () {
       const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndNFTFixture);
 
@@ -837,7 +837,7 @@ describe("Beanie Market", function () {
       )
     });
 
-    it.only("Fulfill escrow offer ownership change", async function () {
+    it("Fulfill escrow offer ownership change", async function () {
       const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
 
       const addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
