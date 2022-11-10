@@ -103,8 +103,8 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
 
     address public TOKEN = 0x722E8BdD2ce80A4422E880164f2079488e115365; //WETH, NOVA
     address public devAddress = 0x24312a0b911fE2199fbea92efab55e2ECCeC637D;
-    address public beanieHolderAddress = 0x0000000000000000000000000000000000000001;
-    address public beanBuybackAddress = 0x0000000000000000000000000000000000000002;
+    address public beanieHolderAddress = 0xB967DaE501F16E229A83f0C4FeA263A4be528dF4;
+    address public beanBuybackAddress = 0xE9b8258668E17AFA5D09de9F10381dE5565dbDc0;
 
     mapping(bytes32 => ListingPos) public posInListings;
     mapping(bytes32 => OfferPos) public posInOffers;
@@ -134,7 +134,6 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         address offerer;
         bool escrowed;
     }
-    //TODO: re-examine escrow amounts. Keep coupled unles dev flag set
 
     mapping(bytes32 => Listing) public listings;
     mapping(address => bytes32[]) public listingsByLister;
@@ -148,7 +147,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
 
     bool public tradingPaused = false;
     bool public feesOn = true;
-    bool public autoSendFees = false;
+    bool public autoSendFees = true;
     bool public collectionOwnersCanSetRoyalties = true;
     bool public usersCanWithdrawEscrow = false;
 

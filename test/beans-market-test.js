@@ -317,6 +317,7 @@ describe("Beanie Market", function () {
     it("Fulfill listing feesOn sends correct token amount, autosend off and then process", async function () {
       const { beanieMarket, dummyNFT, owner, addrs, now } = await loadFixture(deployMarketAndListNFTsFixture);
       const address0 = addrs[0];
+      await beanieMarket.connect(owner).setAutoSendFees(false);
 
       const listingIds = await beanieMarket.getListingsByContract(dummyNFT.address);
       const listingToFulfill = listingIds[0];

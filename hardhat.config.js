@@ -59,7 +59,7 @@ module.exports = {
         network: "arbitrumNova",
         chainId: 42170,
         urls: {
-          apiURL: "https://nova.arbitrum.io/rpc	",
+          apiURL: "https://api-nova.arbiscan.io/api",
           browserURL: "https://nova.arbiscan.io"
         }
       }
