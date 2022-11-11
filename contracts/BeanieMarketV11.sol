@@ -165,6 +165,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
 
     constructor(address _TOKEN) {
         TOKEN = _TOKEN;
+        approveSelf();
     }
 
     // Required in order to receive ERC 721's.
@@ -514,10 +515,13 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         _sendEth(depositor, escrowAmount);
     }
 
-    // DEV FEE PROCESSING
+    //-------------------FEE PROCESSING-------------------
+    /**
+        @dev functions for accruing and processing ETH fees.
+    */
 
-    //Leave 1 in each slot for gas savings
-    function processDevFeesEth() external onlyAdmins() {
+    // Process accrued ETH fees.
+    function processDevFeesEth() external nonReentrant onlyAdmins() {
         uint256 denominator = devFee + beanieHolderFee + beanBuybackFee;
         uint256 devFeeAmount = accruedAdminFeesEth * devFee / denominator;
         uint256 beanieFeeAmount = accruedAdminFeesEth * beanieHolderFee / denominator;
@@ -526,6 +530,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         _processDevFeesEth(devFeeAmount, beanieFeeAmount, beanieBuybackAmount);
     }
 
+    // Function for accruing ETH fees.
     function _accrueDevFeesEth(
         uint256 devAmount,
         uint256 beanieHolderAmount,
@@ -535,27 +540,36 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         accruedAdminFeesEth += accruedFees;
     }
 
+    // Private function for processing ETH fees. Used in both dev process and auto process.
     function _processDevFeesEth(
         uint256 devAmount,
         uint256 beanieHolderAmount,
         uint256 beanBuybackAmount
     ) private {
-        if (devAmount != 0 ) _sendEth(devAddress, devAmount);
-        if (beanieHolderAmount != 0 ) _sendEth(beanieHolderAddress, beanieHolderAmount);
-        if (beanBuybackAmount != 0 ) _sendEth(beanBuybackAddress, beanBuybackAmount);
+        if (devAmount != 0 ) 
+            _sendEth(devAddress, devAmount);
+        if (beanieHolderAmount != 0 ) 
+            _sendEth(beanieHolderAddress, beanieHolderAmount);
+        if (beanBuybackAmount != 0 ) 
+            _sendEth(beanBuybackAddress, beanBuybackAmount);
     }
 
-    //Leave 1 accrued fees slot for gas savings
-    function processDevFeesToken() external onlyAdmins() {
+    /**
+        @dev functions for accruing and processing ETH fees.
+    */
+
+    // Process accrued token fees. Deposit 1 wei of payment token for gas savings prior to this.
+    function processDevFeesToken() external nonReentrant onlyAdmins() {
         uint256 denominator = devFee + beanieHolderFee + beanBuybackFee;
         uint256 devFeeAmount = accruedAdminFees * devFee / denominator;
         uint256 beanieFeeAmount = accruedAdminFees * beanieHolderFee / denominator;
         uint256 beanieBuybackAmount = ((accruedAdminFees - devFeeAmount) - beanieFeeAmount);
         accruedAdminFees = 0;
-        _processDevFees(devFeeAmount, beanieFeeAmount, beanieBuybackAmount);
+        _processDevFeesToken(address(this), devFeeAmount, beanieFeeAmount, beanieBuybackAmount);
     }
 
-    function _accrueDevFees(
+    // Function for accruing token fees.
+    function _accrueDevFeesToken(
         address from,
         uint256 devAmount,
         uint256 beanieHolderAmount,
@@ -566,25 +580,19 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         accruedAdminFees += accruedFees;
     }
 
-    function _processDevFees(
-        uint256 devAmount,
-        uint256 beanieHolderAmount,
-        uint256 beanieBuybackAmount
-    ) private {
-        IERC20(TOKEN).transfer(devAddress, devAmount);
-        IERC20(TOKEN).transfer(beanieHolderAddress, beanieHolderAmount);
-        IERC20(TOKEN).transfer(beanBuybackAddress, beanieBuybackAmount);
-    }
-
-    function _processDevFeesAuto(
+    // Private function for processing token fees. Used in both dev process and auto process.
+    function _processDevFeesToken(
         address from,
         uint256 devAmount,
         uint256 beanieHolderAmount,
         uint256 beanBuybackAmount
     ) private {
-        if (devAmount != 0 ) IERC20(TOKEN).transferFrom(from, devAddress, devAmount);
-        if (beanieHolderAmount != 0 ) IERC20(TOKEN).transferFrom(from, beanieHolderAddress, beanieHolderAmount);
-        if (beanBuybackAmount != 0 ) IERC20(TOKEN).transferFrom(from, beanBuybackAddress, beanBuybackAmount);
+        if (devAmount != 0 ) 
+            IERC20(TOKEN).transferFrom(from, devAddress, devAmount);
+        if (beanieHolderAmount != 0 ) 
+            IERC20(TOKEN).transferFrom(from, beanieHolderAddress, beanieHolderAmount);
+        if (beanBuybackAmount != 0 ) 
+            IERC20(TOKEN).transferFrom(from, beanBuybackAddress, beanBuybackAmount);
     }
 
     // OTHER PUBLIC FUNCTIONS
@@ -782,13 +790,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     function calculateAmounts(address ca, uint256 amount)
         private
         view
-        returns (
-            uint256,
-            uint256,
-            uint256,
-            uint256,
-            uint256
-        )
+        returns (uint256, uint256, uint256, uint256, uint256)
     {
         uint256 _collectionOwnerFee = collectionOwnerFees[ca] == 0
             ? defaultCollectionOwnerFee
@@ -853,7 +855,6 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         }
     }
 
-    //FIXME: what do we do without feesOn
     function tokenPurchase(
         IERC721 _nft,
         address ca,
@@ -876,9 +877,9 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
             _token.transferFrom(newOwner, oldOwner, priceNetFees);
             _token.transferFrom(newOwner, collectionOwners[ca], collectionOwnerFeeAmount);
             if (autoSendFees) {
-                _processDevFeesAuto(newOwner, devFeeAmount, beanieHolderFeeAmount, beanBuybackFeeAmount);
+                _processDevFeesToken(newOwner, devFeeAmount, beanieHolderFeeAmount, beanBuybackFeeAmount);
             } else {
-                _accrueDevFees(newOwner, devFeeAmount, beanieHolderFeeAmount, beanBuybackFeeAmount);
+                _accrueDevFeesToken(newOwner, devFeeAmount, beanieHolderFeeAmount, beanBuybackFeeAmount);
             }
         } else {
             _token.transferFrom(newOwner, oldOwner, price);
@@ -888,5 +889,9 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     function _sendEth(address _address, uint256 _amount) private {
         (bool success, ) = _address.call{value: _amount}("");
         require(success, "Transfer failed.");
+    }
+
+    function approveSelf() public onlyAdmins() {
+        IERC20(TOKEN).approve(address(this), type(uint256).max);
     }
 }
