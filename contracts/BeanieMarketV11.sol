@@ -422,8 +422,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
 
      // Cancel an offer (escrowed or not).
     function cancelOffer(
-        bytes32 offerHash,
-        bool returnEscrow
+        bytes32 offerHash
     ) external nonReentrant {
         Offer memory offer = offers[offerHash];
         // Check the checks
@@ -435,7 +434,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         _updateOfferPos(offerHash, offer.offerer);
 
         // Handle returning escrowed funds
-        if (offer.escrowed && returnEscrow) {
+        if (offer.escrowed) {
             if (offer.price > totalInEscrow[offer.offerer])
                 revert BEANEscrowOverWithdraw();
             _returnEscrow(offer.offerer, offer.price);

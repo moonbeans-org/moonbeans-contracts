@@ -1143,17 +1143,26 @@ describe("Beanie Market", function () {
     });
 
     it.only("Offerer can cancel escrow offer, offerer recieves escrow back", async function () {
-      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeOffersFixture);
+      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
 
       let addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
       const addr2offersTail = await addr2offers[addr2offers.length - 1];
 
       let offerHash = addr2offers[0];
+      const offer0Data = await beanieMarket.offers(addr2offers[0]);
+      const offer0price = offer0Data.price;
 
-      await beanieMarket.connect(addrs[2]).cancelOffer(offerHash, false);
+      let offererBalanceBefore = await addrs[2].getBalance();
+
+      let tx = await beanieMarket.connect(addrs[2]).cancelOffer(offerHash);
+      let receipt = await tx.wait();
+      let gasSpent = receipt.gasUsed.mul(receipt.effectiveGasPrice);
+
+      let offererBalanceAfter = await addrs[2].getBalance();
+
+      expect(offererBalanceAfter).to.eql(offererBalanceBefore.add(offer0price).sub(gasSpent));
 
       addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
-
       expect(addr2offers).to.not.contain(offerHash)
       expect(await beanieMarket.posInOffers(addr2offersTail)).to.eql(BIG_ZERO);
       expect(await beanieMarket.offers(offerHash)).to.eql([BIG_ZERO, BIG_ZERO, BIG_ZERO, ADDR_ZERO, ADDR_ZERO, false]);
