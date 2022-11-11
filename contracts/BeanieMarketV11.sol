@@ -202,7 +202,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         unchecked {++userNonces[msg.sender]; }
 
         //Remove the old listing at contractAddress, tokenId. TODO: test
-        
+
         bytes32 oldListingHash = currentListingOrderHash[ca][tokenId];
         if (oldListingHash != bytes32(0)) {
             Listing memory listing = listings[oldListingHash];
@@ -368,8 +368,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         uint256 expiry
     ) public payable nonReentrant {
         uint256 price = msg.value;
-        if (price == 0)
-            revert BEANZeroPrice();
+        if (price == 0) revert BEANZeroPrice();
 
         totalEscrowedAmount += price;
         totalInEscrow[msg.sender] += price;
@@ -525,9 +524,9 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         uint256 denominator = devFee + beanieHolderFee + beanBuybackFee;
         uint256 devFeeAmount = accruedAdminFeesEth * devFee / denominator;
         uint256 beanieFeeAmount = accruedAdminFeesEth * beanieHolderFee / denominator;
-        uint256 beanieBuybackAmount = ((accruedAdminFeesEth - devFeeAmount) - beanieFeeAmount);
+        uint256 beanBuybackAmount = ((accruedAdminFeesEth - devFeeAmount) - beanieFeeAmount);
         accruedAdminFeesEth = 0;
-        _processDevFeesEth(devFeeAmount, beanieFeeAmount, beanieBuybackAmount);
+        _processDevFeesEth(devFeeAmount, beanieFeeAmount, beanBuybackAmount);
     }
 
     // Function for accruing ETH fees.
@@ -546,11 +545,11 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         uint256 beanieHolderAmount,
         uint256 beanBuybackAmount
     ) private {
-        if (devAmount != 0 ) 
+        if (devAmount != 0 )
             _sendEth(devAddress, devAmount);
-        if (beanieHolderAmount != 0 ) 
+        if (beanieHolderAmount != 0 )
             _sendEth(beanieHolderAddress, beanieHolderAmount);
-        if (beanBuybackAmount != 0 ) 
+        if (beanBuybackAmount != 0 )
             _sendEth(beanBuybackAddress, beanBuybackAmount);
     }
 
@@ -563,7 +562,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         uint256 denominator = devFee + beanieHolderFee + beanBuybackFee;
         uint256 devFeeAmount = accruedAdminFees * devFee / denominator;
         uint256 beanieFeeAmount = accruedAdminFees * beanieHolderFee / denominator;
-        uint256 beanieBuybackAmount = ((accruedAdminFees - devFeeAmount) - beanieFeeAmount);
+        uint256 beanBuybackAmount = ((accruedAdminFees - devFeeAmount) - beanieFeeAmount);
         accruedAdminFees = 0;
         _processDevFeesToken(address(this), devFeeAmount, beanieFeeAmount, beanieBuybackAmount);
     }
@@ -587,11 +586,11 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         uint256 beanieHolderAmount,
         uint256 beanBuybackAmount
     ) private {
-        if (devAmount != 0 ) 
+        if (devAmount != 0 )
             IERC20(TOKEN).transferFrom(from, devAddress, devAmount);
-        if (beanieHolderAmount != 0 ) 
+        if (beanieHolderAmount != 0 )
             IERC20(TOKEN).transferFrom(from, beanieHolderAddress, beanieHolderAmount);
-        if (beanBuybackAmount != 0 ) 
+        if (beanBuybackAmount != 0 )
             IERC20(TOKEN).transferFrom(from, beanBuybackAddress, beanBuybackAmount);
     }
 
@@ -622,12 +621,8 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     }
 
     // Validates a listing's current status. Checks price is != 0, original lister is current lister,
-    // token is approved, and that expiry has not passed (or is 0).
-    function isValidListing(bytes32 listingHash)
-        public
-        view
-        returns (bool isValid)
-    {
+    // token is approved, and that expiry has not passed (or is 0). Anyone can remove invalid listings.
+    function isValidListing(bytes32 listingHash) public  view returns (bool isValid) {
         Listing memory listing = listings[listingHash];
         IERC721 token = IERC721(listing.contractAddress);
         address tknOwner = token.ownerOf(listing.tokenId);
@@ -638,16 +633,12 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
                     );
     }
 
+    // Matches the old isListed function. Maintained for easy front-end backwards compatibility.
+    // ONLY checks if a listing exists - NOT if it's a valid listing.
     function isListed(address ca, uint256 tokenId) public view returns (bool listingState) {
         bytes32 listingHash = currentListingOrderHash[ca][tokenId];
         Listing memory listing = listings[listingHash];
-        IERC721 token = IERC721(listing.contractAddress);
-        address tknOwner = token.ownerOf(listing.tokenId);
-        listingState = (listing.price != 0 &&
-                    token.ownerOf(listing.tokenId) == listing.lister &&
-                    token.isApprovedForAll(tknOwner, address(this)) &&
-                    (listing.expiry == 0 || (listing.expiry > block.timestamp))
-                    );
+        listingState = (listing.price != 0 && (listing.expiry == 0 || (listing.expiry > block.timestamp)));
     }
 
     function getCurrentListing(address ca, uint256 tokenId) public view returns (Listing memory listing) {
@@ -669,11 +660,10 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     }
 
     function setTrading(bool value) external onlyOwner {
-        require(tradingPaused != value, "Already set to that value.");
         tradingPaused = value;
     }
 
-    // Convenience function for listing
+    // Convenience function for listing / Partially implements EIP2981
     function listCollection(address ca, bool tradingEnabled, address _royaltyWallet, uint256 _fee) external onlyAdmins {
         uint256 fee = _fee;
         address royaltyWallet = _royaltyWallet;
@@ -689,15 +679,11 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     }
 
     function setCollectionTrading(address ca, bool value) external onlyAdmins {
-        require(
-            collectionTradingEnabled[ca] != value,
-            "Already set to that value."
-        );
         collectionTradingEnabled[ca] = value;
     }
 
-    function setCollectionOwner(address ca, address owner) external onlyAdmins {
-        collectionOwners[ca] = owner;
+    function setCollectionOwner(address ca, address _owner) external onlyAdmins {
+        collectionOwners[ca] = _owner;
     }
 
     function setDevFee(uint256 fee) external onlyOwner {
@@ -716,8 +702,8 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     }
 
     function setCollectionOwnerFee(address ca, uint256 fee) external {
-        bool verifiedCollectionOwner = collectionOwnersCanSetRoyalties &&
-            (_msgSender() == collectionOwners[ca]);
+        // Collection owner or contract owner can set fees
+        bool verifiedCollectionOwner = collectionOwnersCanSetRoyalties && (_msgSender() == collectionOwners[ca]);
         require((_msgSender() == owner()) || verifiedCollectionOwner);
         require(fee <= 1000, "Max 10% fee");
         collectionOwnerFees[ca] = fee;
@@ -752,10 +738,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         usersCanWithdrawEscrow = _value;
     }
 
-    function setCollectionOwnersCanSetRoyalties(bool _value)
-        external
-        onlyOwner
-    {
+    function setCollectionOwnersCanSetRoyalties(bool _value) external  onlyOwner {
         collectionOwnersCanSetRoyalties = _value;
     }
 

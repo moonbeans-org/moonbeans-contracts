@@ -172,7 +172,7 @@ describe("Beanie Market", function () {
       )
 
     });
-  
+
     it("Fulfill listing ownership change", async function () {
       const { beanieMarket, dummyNFT, owner, addrs, now } = await loadFixture(deployMarketAndListNFTsFixture);
       const address0 = addrs[0];
@@ -208,7 +208,7 @@ describe("Beanie Market", function () {
       //Fulfill listing
       await beanieMarket.connect(addrs[1]).fulfillListing(listingToFulfill, addrs[1].address, {value: ONE_ETH});
       expect(await dummyNFT.ownerOf(1)).to.equal(addrs[1].address);
-      
+
       listingsByLister0 = await beanieMarket.getListingsByLister(addrs[0].address);
       listingsByLister1 = await beanieMarket.getListingsByLister(addrs[1].address);
       listingsByContract = await beanieMarket.getListingsByContract(dummyNFT.address);
@@ -255,17 +255,17 @@ describe("Beanie Market", function () {
 
       let oldOwnerBalanceBefore = await addrs[0].getBalance();
       let newOwnerBalanceBefore = await addrs[1].getBalance();
-      
+
       let tx = await beanieMarket.connect(addrs[1]).fulfillListing(listingToFulfill, addrs[1].address, {value: ONE_ETH});
       let receipt = await tx.wait();
       const gasSpent = receipt.gasUsed.mul(receipt.effectiveGasPrice);
 
       let oldOwnerBalanceAfter = await addrs[0].getBalance();
       let newOwnerBalanceAfter = await addrs[1].getBalance();
-    
+
       expect(oldOwnerBalanceAfter).to.eql(oldOwnerBalanceBefore.add(ONE_ETH));
       expect(newOwnerBalanceAfter).to.eql(newOwnerBalanceBefore.sub(ONE_ETH).sub(gasSpent));
-      
+
       expect(await dummyNFT.ownerOf(1)).to.equal(addrs[1].address);
 
     });
@@ -305,11 +305,11 @@ describe("Beanie Market", function () {
       let beanBuybackFeeAmount = ONE_ETH.mul(beanBuybackFee).div(10000);
       let collectionOwnerFeeAmount = ONE_ETH.mul(collectionOwnerFee).div(10000);
       let afterFeePrice = ONE_ETH.mul(totalFee).div(10000);
-      
+
       //Check principal balances
       expect(oldOwnerBalanceAfter).to.eql(oldOwnerBalanceBefore.add(ONE_ETH).sub(afterFeePrice));
       expect(newOwnerBalanceAfter).to.eql(newOwnerBalanceBefore.sub(ONE_ETH).sub(gasSpent));
-      
+
       //Check fee balances
       expect(await ethers.provider.getBalance(devAddress)).to.eql(devFeeAmount);
       expect(await ethers.provider.getBalance(beanHolderAddress)).to.eql(beanieHolderFeeAmount);
@@ -370,11 +370,11 @@ describe("Beanie Market", function () {
       let beanieHolderFeeAmount = ONE_ETH.mul(beanieHolderFee).div(10000);
       let beanBuybackFeeAmount = ONE_ETH.mul(beanBuybackFee).div(10000)
       let afterFeePrice = ONE_ETH.mul(totalFee).div(10000);
-      
+
       //Check principal balances
       expect(oldOwnerBalanceAfter).to.eql(oldOwnerBalanceBefore.add(ONE_ETH).sub(afterFeePrice));
       expect(newOwnerBalanceAfter).to.eql(newOwnerBalanceBefore.sub(ONE_ETH).sub(gasSpent));
-      
+
       //Check fee balances
       expect(await ethers.provider.getBalance(devAddress)).to.eql(devFeeAmount);
       expect(await ethers.provider.getBalance(beanHolderAddress)).to.eql(beanieHolderFeeAmount);
@@ -517,7 +517,7 @@ describe("Beanie Market", function () {
 
       let addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
       let addr3offers = await beanieMarket.getOffersByOfferer(addrs[3].address);
-      
+
       const addr2offersTail = await addr2offers[addr2offers.length - 1];
       const addr3offersTail = await addr3offers[addr3offers.length - 1];
 
@@ -544,13 +544,13 @@ describe("Beanie Market", function () {
 
       let addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
       let addr3offers = await beanieMarket.getOffersByOfferer(addrs[3].address);
-      
+
       const addr2offersTail = await addr2offers[addr2offers.length - 1];
       const addr3offersTail = await addr3offers[addr3offers.length - 1];
 
       const offer0Hash = addr2offers[0];
       const offer0Data = await beanieMarket.offers(addr2offers[0]);
-      
+
       const offer1Hash = addr3offers[1];
       const offer1Data = await beanieMarket.offers(addr3offers[1]);
 
@@ -579,7 +579,7 @@ describe("Beanie Market", function () {
 
       const offer0Hash = addr2offers[0];
       const offer0Data = await beanieMarket.offers(addr2offers[0]);
-      
+
       const offer1Hash = addr3offers[1];
       const offer1Data = await beanieMarket.offers(addr3offers[1]);
 
@@ -598,7 +598,7 @@ describe("Beanie Market", function () {
 
       oldOwnerBalanceBefore = await paymentToken.balanceOf(addrs[0].address);
       newOwnerBalanceBefore = await paymentToken.balanceOf(addrs[3].address);
-      
+
       await beanieMarket.connect(addrs[0]).acceptOffer(offer1Hash);
 
       oldOwnerBalanceAfter = await paymentToken.balanceOf(addrs[0].address);
@@ -630,7 +630,7 @@ describe("Beanie Market", function () {
 
       const offer0Hash = addr2offers[0];
       const offer0Data = await beanieMarket.offers(addr2offers[0]);
-      
+
       const offer1Hash = addr3offers[1];
       const offer1Data = await beanieMarket.offers(addr3offers[1]);
 
@@ -664,7 +664,7 @@ describe("Beanie Market", function () {
       oldOwnerBalanceBefore = await paymentToken.balanceOf(addrs[0].address);
       newOwnerBalanceBefore = await paymentToken.balanceOf(addrs[3].address);
       collectionOwnerBalBefore = await paymentToken.balanceOf(collectionOwnerAddress);
-      
+
       await beanieMarket.connect(addrs[0]).acceptOffer(offer1Hash);
 
       oldOwnerBalanceAfter = await paymentToken.balanceOf(addrs[0].address);
@@ -704,7 +704,7 @@ describe("Beanie Market", function () {
 
       const offer0Hash = addr2offers[0];
       const offer0Data = await beanieMarket.offers(addr2offers[0]);
-      
+
       const offer1Hash = addr3offers[1];
       const offer1Data = await beanieMarket.offers(addr3offers[1]);
 
@@ -740,7 +740,7 @@ describe("Beanie Market", function () {
       oldOwnerBalanceBefore = await paymentToken.balanceOf(addrs[0].address);
       newOwnerBalanceBefore = await paymentToken.balanceOf(addrs[3].address);
       collectionOwnerBalBefore = await paymentToken.balanceOf(collectionOwnerAddress);
-      
+
       await beanieMarket.connect(addrs[0]).acceptOffer(offer1Hash);
 
       oldOwnerBalanceAfter = await paymentToken.balanceOf(addrs[0].address);
@@ -771,7 +771,7 @@ describe("Beanie Market", function () {
       await beanieMarket.connect(addrs[2]).cancelOffer(offerHash, false);
 
       addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
-      
+
       expect(addr2offers).to.not.contain(offerHash)
       expect(await beanieMarket.posInOffers(addr2offersTail)).to.eql(BIG_ZERO);
       expect(await beanieMarket.offers(offerHash)).to.eql([BIG_ZERO, BIG_ZERO, BIG_ZERO, ADDR_ZERO, ADDR_ZERO, false]);
@@ -885,7 +885,7 @@ describe("Beanie Market", function () {
 
       let addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
       let addr3offers = await beanieMarket.getOffersByOfferer(addrs[3].address);
-      
+
       const addr2offersTail = await addr2offers[addr2offers.length - 1];
       const addr3offersTail = await addr3offers[addr3offers.length - 1];
 
@@ -914,13 +914,13 @@ describe("Beanie Market", function () {
 
       let addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
       let addr3offers = await beanieMarket.getOffersByOfferer(addrs[3].address);
-      
+
       const addr2offersTail = await addr2offers[addr2offers.length - 1];
       const addr3offersTail = await addr3offers[addr3offers.length - 1];
 
       const offer0Hash = addr2offers[0];
       const offer0Data = await beanieMarket.offers(addr2offers[0]);
-      
+
       const offer1Hash = addr3offers[1];
       const offer1Data = await beanieMarket.offers(addr3offers[0]);
 
@@ -949,7 +949,7 @@ describe("Beanie Market", function () {
 
       const offer0Hash = addr2offers[0];
       const offer0Data = await beanieMarket.offers(addr2offers[0]);
-      
+
       const offer1Hash = addr3offers[1];
       const offer1Data = await beanieMarket.offers(addr3offers[1]);
 
@@ -969,7 +969,7 @@ describe("Beanie Market", function () {
       expect(newOwnerBalanceAfter).to.eql(newOwnerBalanceBefore);
 
       oldOwnerBalanceBefore = await addrs[0].getBalance();
-      
+
       tx = await beanieMarket.connect(addrs[0]).acceptOffer(offer1Hash);
       receipt = await tx.wait();
       gasSpent = receipt.gasUsed.mul(receipt.effectiveGasPrice);
@@ -1002,7 +1002,7 @@ describe("Beanie Market", function () {
       const offer0Hash = addr2offers[0];
       const offer0Data = await beanieMarket.offers(addr2offers[0]);
       const offer0price = offer0Data.price;
-      
+
       const offer1Hash = addr3offers[1];
       const offer1Data = await beanieMarket.offers(addr3offers[1]);
 
@@ -1034,7 +1034,7 @@ describe("Beanie Market", function () {
       // oldOwnerBalanceBefore = await paymentToken.balanceOf(addrs[0].address);
       // newOwnerBalanceBefore = await paymentToken.balanceOf(addrs[3].address);
       // collectionOwnerBalBefore = await paymentToken.balanceOf(collectionOwnerAddress);
-      
+
       // await beanieMarket.connect(addrs[0]).acceptOffer(offer1Hash);
 
       // oldOwnerBalanceAfter = await paymentToken.balanceOf(addrs[0].address);
@@ -1074,7 +1074,7 @@ describe("Beanie Market", function () {
 
       const offer0Hash = addr2offers[0];
       const offer0Data = await beanieMarket.offers(addr2offers[0]);
-      
+
       const offer1Hash = addr3offers[1];
       const offer1Data = await beanieMarket.offers(addr3offers[1]);
 
@@ -1141,7 +1141,7 @@ describe("Beanie Market", function () {
       await beanieMarket.connect(addrs[2]).cancelOffer(offerHash, false);
 
       addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
-      
+
       expect(addr2offers).to.not.contain(offerHash)
       expect(await beanieMarket.posInOffers(addr2offersTail)).to.eql(BIG_ZERO);
       expect(await beanieMarket.offers(offerHash)).to.eql([BIG_ZERO, BIG_ZERO, BIG_ZERO, ADDR_ZERO, ADDR_ZERO, false]);
