@@ -434,7 +434,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         _updateOfferPos(offerHash, offer.offerer);
 
         // Handle returning escrowed funds
-        if (offer.escrowed) {
+        if (offer.escrowed && !usersCanWithdrawEscrow) {
             if (offer.price > totalInEscrow[offer.offerer])
                 revert BEANEscrowOverWithdraw();
             _returnEscrow(offer.offerer, offer.price);
