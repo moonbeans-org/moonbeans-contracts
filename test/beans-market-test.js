@@ -1005,6 +1005,7 @@ describe("Beanie Market", function () {
 
       const offer1Hash = addr3offers[1];
       const offer1Data = await beanieMarket.offers(addr3offers[1]);
+      const offer1price = offer1Data.price;
 
       await dummyNFT.connect(addrs[0]).setApprovalForAll(beanieMarket.address, true);
       let oldOwnerBalanceBefore = await addrs[0].getBalance();
@@ -1031,25 +1032,29 @@ describe("Beanie Market", function () {
       expect(await ethers.provider.getBalance(beanBuybackAddress)).to.eql(beanBuybackFeeAmount);
       expect(await collectionOwnerBalAfter).to.eql(collectionOwnerBalBefore.add(collectionOwnerFeeAmount));
 
-      // oldOwnerBalanceBefore = await paymentToken.balanceOf(addrs[0].address);
-      // newOwnerBalanceBefore = await paymentToken.balanceOf(addrs[3].address);
-      // collectionOwnerBalBefore = await paymentToken.balanceOf(collectionOwnerAddress);
+      oldOwnerBalanceBefore = await addrs[0].getBalance();
+      collectionOwnerBalBefore = await ethers.provider.getBalance(collectionOwnerAddress);
 
-      // await beanieMarket.connect(addrs[0]).acceptOffer(offer1Hash);
+      tx = await beanieMarket.connect(addrs[0]).acceptOffer(offer1Hash);
+      receipt = await tx.wait();
+      gasSpent = receipt.gasUsed.mul(receipt.effectiveGasPrice);
 
-      // oldOwnerBalanceAfter = await paymentToken.balanceOf(addrs[0].address);
-      // newOwnerBalanceAfter = await paymentToken.balanceOf(addrs[3].address);
-      // collectionOwnerBalAfter = await paymentToken.balanceOf(collectionOwnerAddress);
+      let devFeeAmount_1 = offer1price.mul(devFee).div(10000);
+      let beanieHolderFeeAmount_1 = offer1price.mul(beanieHolderFee).div(10000);
+      let beanBuybackFeeAmount_1 = offer1price.mul(beanBuybackFee).div(10000);
+      let collectionOwnerFeeAmount_1 = offer1price.mul(collectionOwnerFee).div(10000);
+      let afterFeePrice_1 = offer1price.mul(totalFee).div(10000);
 
-      // //Check principal balances
-      // expect(oldOwnerBalanceAfter).to.eql(oldOwnerBalanceBefore.add(ONE_ETH).sub(afterFeePrice));
-      // expect(newOwnerBalanceAfter).to.eql(newOwnerBalanceBefore.sub(ONE_ETH));
+      oldOwnerBalanceAfter = await addrs[0].getBalance();
+      collectionOwnerBalAfter = await ethers.provider.getBalance(collectionOwnerAddress);
+      
+      //Check principal balances
+      expect(oldOwnerBalanceAfter).to.eql(oldOwnerBalanceBefore.add(offer0price).sub(afterFeePrice_1).sub(gasSpent));
 
-      // expect(await paymentToken.balanceOf(devAddress)).to.eql(devFeeAmount.mul(2));
-      // expect(await paymentToken.balanceOf(beanHolderAddress)).to.eql(beanieHolderFeeAmount.mul(2));
-      // expect(await paymentToken.balanceOf(beanBuybackAddress)).to.eql(beanBuybackFeeAmount.mul(2));
-      // expect(await collectionOwnerBalAfter).to.eql(collectionOwnerBalBefore.add(collectionOwnerFeeAmount));
-
+      expect(await ethers.provider.getBalance(devAddress)).to.eql(devFeeAmount.add(devFeeAmount_1));
+      expect(await ethers.provider.getBalance(beanHolderAddress)).to.eql(beanieHolderFeeAmount.add(beanieHolderFeeAmount_1));
+      expect(await ethers.provider.getBalance(beanBuybackAddress)).to.eql(beanBuybackFeeAmount.add(beanBuybackFeeAmount_1));
+      expect(await collectionOwnerBalAfter).to.eql(collectionOwnerBalBefore.add(collectionOwnerFeeAmount_1));
     });
 
     it("Fulfill escrow feesOn sends correct token amount, autosend off and then process", async function () {
@@ -1074,63 +1079,70 @@ describe("Beanie Market", function () {
 
       const offer0Hash = addr2offers[0];
       const offer0Data = await beanieMarket.offers(addr2offers[0]);
+      const offer0price = offer0Data.price;
 
       const offer1Hash = addr3offers[1];
       const offer1Data = await beanieMarket.offers(addr3offers[1]);
+      const offer1price = offer1Data.price;
 
       await dummyNFT.connect(addrs[0]).setApprovalForAll(beanieMarket.address, true);
+      let oldOwnerBalanceBefore = await addrs[0].getBalance();
+      let collectionOwnerBalBefore = await ethers.provider.getBalance(collectionOwnerAddress);
 
-      let oldOwnerBalanceBefore = await paymentToken.balanceOf(addrs[0].address);
-      let newOwnerBalanceBefore = await paymentToken.balanceOf(addrs[2].address);
-      let collectionOwnerBalBefore = await paymentToken.balanceOf(collectionOwnerAddress);
+      let tx = await beanieMarket.connect(addrs[0]).acceptOffer(offer0Hash);
+      let receipt = await tx.wait();
+      let gasSpent = receipt.gasUsed.mul(receipt.effectiveGasPrice);
 
-      await beanieMarket.connect(addrs[0]).acceptOffer(offer0Hash);
+      let oldOwnerBalanceAfter = await addrs[0].getBalance();
+      let collectionOwnerBalAfter = await ethers.provider.getBalance(collectionOwnerAddress);
 
-      let oldOwnerBalanceAfter = await paymentToken.balanceOf(addrs[0].address);
-      let newOwnerBalanceAfter = await paymentToken.balanceOf(addrs[2].address);
-      let collectionOwnerBalAfter = await paymentToken.balanceOf(collectionOwnerAddress);
-
-      let devFeeAmount = ONE_ETH.mul(devFee).div(10000);
-      let beanieHolderFeeAmount = ONE_ETH.mul(beanieHolderFee).div(10000);
-      let beanBuybackFeeAmount = ONE_ETH.mul(beanBuybackFee).div(10000);
-      let collectionOwnerFeeAmount = ONE_ETH.mul(collectionOwnerFee).div(10000);
-      let afterFeePrice = ONE_ETH.mul(totalFee).div(10000);
+      let devFeeAmount = offer0price.mul(devFee).div(10000);
+      let beanieHolderFeeAmount = offer0price.mul(beanieHolderFee).div(10000);
+      let beanBuybackFeeAmount = offer0price.mul(beanBuybackFee).div(10000);
+      let collectionOwnerFeeAmount = offer0price.mul(collectionOwnerFee).div(10000);
+      let afterFeePrice = offer0price.mul(totalFee).div(10000);
 
       //Check principal balances
-      expect(oldOwnerBalanceAfter).to.eql(oldOwnerBalanceBefore.add(ONE_ETH).sub(afterFeePrice));
-      expect(newOwnerBalanceAfter).to.eql(newOwnerBalanceBefore.sub(ONE_ETH));
-
-      await beanieMarket.connect(owner).processDevFeesToken();
-
-      expect(await paymentToken.balanceOf(devAddress)).to.eql(devFeeAmount);
-      expect(await paymentToken.balanceOf(beanHolderAddress)).to.eql(beanieHolderFeeAmount);
-      expect(await paymentToken.balanceOf(beanBuybackAddress)).to.eql(beanBuybackFeeAmount);
+      expect(oldOwnerBalanceAfter).to.eql(oldOwnerBalanceBefore.add(offer0price).sub(afterFeePrice).sub(gasSpent));
       expect(await collectionOwnerBalAfter).to.eql(collectionOwnerBalBefore.add(collectionOwnerFeeAmount));
+      expect(await ethers.provider.getBalance(devAddress)).to.eql(BIG_ZERO);
+      expect(await ethers.provider.getBalance(beanHolderAddress)).to.eql(BIG_ZERO);
+      expect(await ethers.provider.getBalance(beanBuybackAddress)).to.eql(BIG_ZERO);
 
-      oldOwnerBalanceBefore = await paymentToken.balanceOf(addrs[0].address);
-      newOwnerBalanceBefore = await paymentToken.balanceOf(addrs[3].address);
-      collectionOwnerBalBefore = await paymentToken.balanceOf(collectionOwnerAddress);
+      await beanieMarket.connect(owner).processDevFeesEth();
+
+      expect(await ethers.provider.getBalance(devAddress)).to.eql(devFeeAmount);
+      expect(await ethers.provider.getBalance(beanHolderAddress)).to.eql(beanieHolderFeeAmount);
+      expect(await ethers.provider.getBalance(beanBuybackAddress)).to.eql(beanBuybackFeeAmount);
+
+      oldOwnerBalanceBefore = await addrs[0].getBalance();
+      collectionOwnerBalBefore = await ethers.provider.getBalance(collectionOwnerAddress);
+
+      tx = await beanieMarket.connect(addrs[0]).acceptOffer(offer1Hash);
+      receipt = await tx.wait();
+      gasSpent = receipt.gasUsed.mul(receipt.effectiveGasPrice);
+
+      let devFeeAmount_1 = offer1price.mul(devFee).div(10000);
+      let beanieHolderFeeAmount_1 = offer1price.mul(beanieHolderFee).div(10000);
+      let beanBuybackFeeAmount_1 = offer1price.mul(beanBuybackFee).div(10000);
+      let collectionOwnerFeeAmount_1 = offer1price.mul(collectionOwnerFee).div(10000);
+      let afterFeePrice_1 = offer1price.mul(totalFee).div(10000);
+
+      oldOwnerBalanceAfter = await addrs[0].getBalance();
+      collectionOwnerBalAfter = await ethers.provider.getBalance(collectionOwnerAddress);
       
-      await beanieMarket.connect(addrs[0]).acceptOffer(offer1Hash);
-
-      oldOwnerBalanceAfter = await paymentToken.balanceOf(addrs[0].address);
-      newOwnerBalanceAfter = await paymentToken.balanceOf(addrs[3].address);
-      collectionOwnerBalAfter = await paymentToken.balanceOf(collectionOwnerAddress);
-
       //Check principal balances
-      expect(oldOwnerBalanceAfter).to.eql(oldOwnerBalanceBefore.add(ONE_ETH).sub(afterFeePrice));
-      expect(newOwnerBalanceAfter).to.eql(newOwnerBalanceBefore.sub(ONE_ETH));
+      expect(oldOwnerBalanceAfter).to.eql(oldOwnerBalanceBefore.add(offer0price).sub(afterFeePrice_1).sub(gasSpent));
+      expect(await collectionOwnerBalAfter).to.eql(collectionOwnerBalBefore.add(collectionOwnerFeeAmount_1));
 
-      await beanieMarket.connect(owner).processDevFeesToken();
-
-      expect(await paymentToken.balanceOf(devAddress)).to.eql(devFeeAmount.mul(2));
-      expect(await paymentToken.balanceOf(beanHolderAddress)).to.eql(beanieHolderFeeAmount.mul(2));
-      expect(await paymentToken.balanceOf(beanBuybackAddress)).to.eql(beanBuybackFeeAmount.mul(2));
-      expect(await collectionOwnerBalAfter).to.eql(collectionOwnerBalBefore.add(collectionOwnerFeeAmount));
-
+      await beanieMarket.connect(owner).processDevFeesEth();
+      
+      expect(await ethers.provider.getBalance(devAddress)).to.eql(devFeeAmount.add(devFeeAmount_1));
+      expect(await ethers.provider.getBalance(beanHolderAddress)).to.eql(beanieHolderFeeAmount.add(beanieHolderFeeAmount_1));
+      expect(await ethers.provider.getBalance(beanBuybackAddress)).to.eql(beanBuybackFeeAmount.add(beanBuybackFeeAmount_1));
     });
 
-    it("Offerer can cancel escrow offer, offerer recieves escrow back", async function () {
+    it.only("Offerer can cancel escrow offer, offerer recieves escrow back", async function () {
       const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeOffersFixture);
 
       let addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);

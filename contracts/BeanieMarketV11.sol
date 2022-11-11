@@ -34,6 +34,7 @@ error BEANCallerNotOwner();
 error BEANNotEnoughInEscrow();
 error BEANOrderExpired();
 error BEANBadExpiry();
+error BEANNoOfferFound();
 
 //Escrow
 error BEANWithdrawNotEnabled();
@@ -451,7 +452,8 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
 
         Offer memory offer = offers[offerHash];
         IERC721 _nft = IERC721(offer.contractAddress);
-
+        if (offer.price == 0)
+            revert BEANNoOfferFound();
         if (offer.expiry < block.timestamp)
             revert BEANOrderExpired();
         if(msg.sender != _nft.ownerOf(offer.tokenId))
