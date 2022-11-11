@@ -564,7 +564,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         uint256 beanieFeeAmount = accruedAdminFees * beanieHolderFee / denominator;
         uint256 beanBuybackAmount = ((accruedAdminFees - devFeeAmount) - beanieFeeAmount);
         accruedAdminFees = 0;
-        _processDevFeesToken(address(this), devFeeAmount, beanieFeeAmount, beanieBuybackAmount);
+        _processDevFeesToken(address(this), devFeeAmount, beanieFeeAmount, beanBuybackAmount);
     }
 
     // Function for accruing token fees.
