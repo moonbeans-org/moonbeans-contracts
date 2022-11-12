@@ -13,7 +13,7 @@ import "./BeanUtils.sol";
 
 import "hardhat/console.sol";
 
-error BEANOwnerNotApproved();
+error BEANDelistNotApproved();
 error BEANNotAuthorized();
 error BEANListingNotActive();
 error BEANTradingPaused();
@@ -88,7 +88,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     );
     event EscrowReturned(address indexed user, uint256 indexed price);
 
-    // Constants
+    // Constants TODO: remove, unused
     uint256 private MAX_INT = ~uint256(0);
     uint128 private SMOL_MAX_INT = ~uint128(0);
 
@@ -185,22 +185,20 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     function listToken(
         address ca,
         uint256 tokenId,
-        uint256 price,
-        uint256 expiry
+        uint128 price,
+        uint128 expiry
     ) public {
         IERC721 token = IERC721(ca);
         if (msg.sender != token.ownerOf(tokenId))
             revert BEANCallerNotOwner();
-        if (price == 0 || price > SMOL_MAX_INT)
-            revert BEANBadPrice();
         if (!token.isApprovedForAll(msg.sender, address(this)))
             revert BEANContractNotApproved();
-        if ((expiry != 0 && expiry < block.timestamp) || expiry > SMOL_MAX_INT)
+        if (expiry != 0 && expiry < block.timestamp)
             revert BEANBadExpiry();
 
         //Generate unique listing hash, increment nonce.
         bytes32 listingHash = computeOrderHash(msg.sender, ca, tokenId, userNonces[msg.sender]);
-        unchecked {++userNonces[msg.sender]; }
+        unchecked {++userNonces[msg.sender];}
 
         //Remove the old listing at contractAddress, tokenId. TODO: test
 
@@ -214,8 +212,8 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         //Store the new listing.
         listings[listingHash] = Listing(
             tokenId,
-            uint128(price),
-            uint128(expiry),
+            price,
+            expiry,
             ca,
             msg.sender
         );
@@ -245,7 +243,14 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         IERC721 token = IERC721(listing.contractAddress);
         address tknOwner = token.ownerOf(listing.tokenId);
 
-        if (!(msg.sender == owner() || administrators[msg.sender] || listing.expiry > block.timestamp)) revert BEANOwnerNotApproved();
+        if (
+            msg.sender != tknOwner && 
+            msg.sender != owner() &&
+            listing.lister != tknOwner &&
+            !administrators[msg.sender] && 
+            listing.expiry > block.timestamp
+        )
+            revert BEANDelistNotApproved();
 
         updateListingPos(listingId, tknOwner, listing.contractAddress);
         delete currentListingOrderHash[listing.contractAddress][listing.tokenId];
@@ -277,7 +282,8 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         address oldOwner = listing.lister;
         IERC721 token = IERC721(listing.contractAddress);
 
-        if(oldOwner != token.ownerOf(listing.tokenId)) revert BEANListingNotActive();
+        if(oldOwner != token.ownerOf(listing.tokenId)) 
+            revert BEANListingNotActive();
 
         //effects - remove listing
         updateListingPos(listingId, oldOwner, listing.contractAddress);
