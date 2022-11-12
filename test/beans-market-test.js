@@ -417,7 +417,41 @@ describe("Beanie Market", function () {
       expect(await beanieMarket.listings(listingToDelist)).to.eql([BIG_ZERO, BIG_ZERO, BIG_ZERO, ADDR_ZERO, ADDR_ZERO]);
       expect(await beanieMarket.posInListings(listingToDelist)).to.eql([BIG_ZERO, BIG_ZERO]);
     });
+
+    it("Creating a new listing for same token removes old listing.", async function () {
+      const { beanieMarket, dummyNFT, owner, addrs, now } = await loadFixture(deployMarketAndListNFTsFixture);
+      const listingIds = await beanieMarket.getListingsByContract(dummyNFT.address);
+      const listingHash = listingIds[0];
+      const listingData = await beanieMarket.listings(listingHash);
+      const currentListingOrderHash = await beanieMarket.currentListingOrderHash(listingData.contractAddress, listingData.tokenId);
+      expect(currentListingOrderHash).to.equal(listingHash);
+
+      await beanieMarket.connect(addrs[0]).listToken(listingData.contractAddress, listingData.tokenId, ONE_ETH, now + 100);
+
+      const listingIdsNew = await beanieMarket.getListingsByContract(dummyNFT.address);
+      const currentListingOrderHashNew = await beanieMarket.currentListingOrderHash(listingData.contractAddress, listingData.tokenId);
+      const listingDataNew = await beanieMarket.listings(currentListingOrderHashNew);
+
+      //Old listing has been canceled
+      expect(await beanieMarket.listings(listingHash)).to.eql([BIG_ZERO, BIG_ZERO, BIG_ZERO, ADDR_ZERO, ADDR_ZERO])
+      expect(await beanieMarket.posInListings(listingHash)).to.eql([BIG_ZERO, BIG_ZERO]);
+
+      console.log(await beanieMarket.posInListings(currentListingOrderHashNew));
+
+      expect(listingData.contractAddress, listingData.tokenId).to.equal(listingDataNew.contractAddress, listingDataNew.tokenId)
+      expect(listingIdsNew).to.not.contain(currentListingOrderHash);
+      expect(listingIdsNew).to.contain(currentListingOrderHashNew);
+      expect(currentListingOrderHash).to.not.equal(currentListingOrderHashNew);
+    });
   });
+
+  describe("Listing errors", function () {
+    it("Cannot list an unowned token", async function () {
+      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndNFTFixture);
+      await expect(beanieMarket.connect(addrs[5]).listToken(dummyNFT.address, 4, ONE_ETH, now + 1000)
+        ).to.be.revertedWithCustomError(beanieMarket, "BEANCallerNotOwner");
+    });
+  })
 
   describe("non-escrow offers", function () {
     it("Make non-escrow offer", async function () {
@@ -768,7 +802,7 @@ describe("Beanie Market", function () {
 
       let offerHash = addr2offers[0];
 
-      await beanieMarket.connect(addrs[2]).cancelOffer(offerHash, false);
+      await beanieMarket.connect(addrs[2]).cancelOffer(offerHash);
 
       addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
 
@@ -1142,7 +1176,7 @@ describe("Beanie Market", function () {
       expect(await ethers.provider.getBalance(beanBuybackAddress)).to.eql(beanBuybackFeeAmount.add(beanBuybackFeeAmount_1));
     });
 
-    it.only("Offerer can cancel escrow offer, offerer recieves escrow back", async function () {
+    it("Offerer can cancel escrow offer, offerer recieves escrow back", async function () {
       const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
 
       let addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);

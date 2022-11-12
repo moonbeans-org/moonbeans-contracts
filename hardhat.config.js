@@ -1,9 +1,10 @@
 require("dotenv").config();
 
-require('@openzeppelin/hardhat-upgrades');
+require("@openzeppelin/hardhat-upgrades");
 require("@nomiclabs/hardhat-etherscan");
 require("hardhat-gas-reporter");
 require("solidity-coverage");
+require("@nomicfoundation/hardhat-chai-matchers");
 
 module.exports = {
   solidity: {

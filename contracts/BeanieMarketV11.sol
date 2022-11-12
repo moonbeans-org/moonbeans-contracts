@@ -89,8 +89,8 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     event EscrowReturned(address indexed user, uint256 indexed price);
 
     // Constants
-    uint256 private MAX_INT = 2**256 - 1;
-    uint128 private SMOL_MAX_INT = 2**128 - 1;
+    uint256 private MAX_INT = ~uint256(0);
+    uint128 private SMOL_MAX_INT = ~uint128(0);
 
     // Fees are out of 10000, to allow for 0.01 - 9.99% fees.
     uint256 public devFee = 100; //1%
@@ -341,7 +341,6 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
 
     // OFFERS
     // Make a standard offer (checks balance of bidder, but does not escrow).
-    // TODO: Robust tracking of extant offers and approval / fund coverage.
     function makeOffer(
         address ca,
         uint256 tokenId,
@@ -350,6 +349,8 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     ) public payable {
         //FIXME: Can probably remove this. Trivial workaround having a second wallet.
         // require(msg.sender != IERC721(ca).ownerOf(tokenId), "Can not bid on your own NFT.");
+        if (tradingPaused)
+            revert BEANTradingPaused();
         if (price == 0)
             revert BEANZeroPrice();
         if (IERC20(TOKEN).allowance(msg.sender, address(this)) < price)
@@ -368,9 +369,11 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         uint256 tokenId,
         uint256 expiry
     ) public payable nonReentrant {
+        if (tradingPaused)
+            revert BEANTradingPaused();
         uint256 price = msg.value;
-        if (price == 0) revert BEANZeroPrice();
 
+        if (price == 0) revert BEANZeroPrice();
         totalEscrowedAmount += price;
         totalInEscrow[msg.sender] += price;
 
@@ -420,21 +423,46 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         offerHashesByBuyer[user].push(offerHash);
     }
 
-     // Cancel an offer (escrowed or not).
+    // Cancel an offer (escrowed or not).
+    // TODO: Ensure that if userCanWithdrawEscrow flag is on, collateralized accounts still return escrowed funds.
     function cancelOffer(
         bytes32 offerHash
     ) external nonReentrant {
         Offer memory offer = offers[offerHash];
         // Check the checks
-        if (offer.offerer != msg.sender && !administrators[msg.sender] && offer.expiry > block.timestamp ) revert BEANNotAuthorized();
-        if (offer.price == 0) revert BEANNoCancellableOffer();
+        if (
+            offer.offerer != msg.sender && 
+            !administrators[msg.sender] && 
+            offer.expiry > block.timestamp &&
+            IERC721(offer.contractAddress).ownerOf(offer.tokenId) != msg.sender
+        ) revert BEANNotAuthorized();
+        if (offer.price == 0) 
+            revert BEANNoCancellableOffer();
 
         // Remove the offer
         delete offers[offerHash];
         _updateOfferPos(offerHash, offer.offerer);
 
         // Handle returning escrowed funds
-        if (offer.escrowed && !usersCanWithdrawEscrow) {
+        if (offer.escrowed) {
+            if (offer.price > totalInEscrow[offer.offerer])
+                revert BEANEscrowOverWithdraw();
+            _returnEscrow(offer.offerer, offer.price);
+        }
+    }
+
+    function cancelOfferAdmin(
+        bytes32 offerHash,
+        bool returnEscrow
+    ) external onlyAdmins nonReentrant {
+        Offer memory offer = offers[offerHash];
+        if (offer.price == 0) 
+            revert BEANNoCancellableOffer();
+        // Remove the offer
+        delete offers[offerHash];
+        _updateOfferPos(offerHash, offer.offerer);
+        // Handle returning escrowed funds
+        if (offer.escrowed && returnEscrow) {
             if (offer.price > totalInEscrow[offer.offerer])
                 revert BEANEscrowOverWithdraw();
             _returnEscrow(offer.offerer, offer.price);
@@ -445,10 +473,8 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     function acceptOffer(
         bytes32 offerHash
     ) external nonReentrant {
-
         if (tradingPaused)
             revert BEANTradingPaused();
-
         Offer memory offer = offers[offerHash];
         IERC721 _nft = IERC721(offer.contractAddress);
         if (offer.price == 0)

@@ -314,7 +314,6 @@ contract BeanieMarketV11Upgradeable is IERC721ReceiverUpgradeable, ReentrancyGua
 
     // OFFERS
     // Make a standard offer (checks balance of bidder, but does not escrow).
-    // TODO: Robust tracking of extant offers and approval / fund coverage.
     function makeOffer(
         address ca,
         uint256 tokenId,
