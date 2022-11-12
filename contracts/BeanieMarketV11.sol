@@ -20,6 +20,7 @@ error BEANTradingPaused();
 error BEANNotOwnerOrAdmin();
 error BEANNoSelfOffer();
 error BEANCollectionNotEnabled();
+error BEANIntegerOverFlow();
 
 //General
 error BEANZeroPrice();
@@ -89,8 +90,8 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     event EscrowReturned(address indexed user, uint256 indexed price);
 
     // Constants TODO: remove, unused
-    uint256 private MAX_INT = ~uint256(0);
-    uint128 private SMOL_MAX_INT = ~uint128(0);
+    uint256 constant MAX_INT = ~uint256(0);
+    uint128 constant SMOL_MAX_INT = ~uint128(0);
 
     // Fees are out of 10000, to allow for 0.01 - 9.99% fees.
     uint256 public devFee = 100; //1%
@@ -185,10 +186,12 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     function listToken(
         address ca,
         uint256 tokenId,
-        uint128 price,
-        uint128 expiry
+        uint256 price,
+        uint256 expiry
     ) public {
         IERC721 token = IERC721(ca);
+        if (price > SMOL_MAX_INT || expiry > SMOL_MAX_INT)
+            revert BEANIntegerOverFlow();
         if (msg.sender != token.ownerOf(tokenId))
             revert BEANCallerNotOwner();
         if (!token.isApprovedForAll(msg.sender, address(this)))
@@ -212,8 +215,8 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         //Store the new listing.
         listings[listingHash] = Listing(
             tokenId,
-            price,
-            expiry,
+            uint128(price),
+            uint128(expiry),
             ca,
             msg.sender
         );
@@ -242,12 +245,11 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         Listing memory listing = listings[listingId];
         IERC721 token = IERC721(listing.contractAddress);
         address tknOwner = token.ownerOf(listing.tokenId);
-
         if (
             msg.sender != tknOwner && 
             msg.sender != owner() &&
-            listing.lister != tknOwner &&
             !administrators[msg.sender] && 
+            listing.lister == tknOwner &&
             listing.expiry > block.timestamp
         )
             revert BEANDelistNotApproved();
@@ -355,6 +357,8 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     ) public payable {
         //FIXME: Can probably remove this. Trivial workaround having a second wallet.
         // require(msg.sender != IERC721(ca).ownerOf(tokenId), "Can not bid on your own NFT.");
+        if (price > SMOL_MAX_INT || expiry > SMOL_MAX_INT)
+            revert BEANIntegerOverFlow();
         if (tradingPaused)
             revert BEANTradingPaused();
         if (price == 0)
@@ -377,6 +381,8 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     ) public payable nonReentrant {
         if (tradingPaused)
             revert BEANTradingPaused();
+        if (msg.value > SMOL_MAX_INT || expiry > SMOL_MAX_INT)
+            revert BEANIntegerOverFlow();
         uint256 price = msg.value;
 
         if (price == 0) revert BEANZeroPrice();

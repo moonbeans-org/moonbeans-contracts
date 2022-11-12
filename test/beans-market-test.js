@@ -397,43 +397,6 @@ describe("Beanie Market", async function () {
       expect(listingsByLister1.length).to.equal(1)
       expect(listingsByContract.length).to.equal(5)
 
-      const listingTailLister = await listingsByLister0[listingsByLister0.length - 1];
-      const listingTailContract = await listingsByLister0[listingsByLister0.length - 1];
-
-      await beanieMarket.connect(address0).delistToken(listingToDelist);
-
-      listingsByLister0 = await beanieMarket.getListingsByLister(addrs[0].address);
-      listingsByLister1 = await beanieMarket.getListingsByLister(addrs[1].address);
-      listingsByContract = await beanieMarket.getListingsByContract(dummyNFT.address);
-      expect(listingsByLister0).to.not.contain(listingToDelist)
-      expect(listingsByLister1).to.not.contain(listingToDelist)
-      expect(listingsByContract).to.not.contain(listingToDelist)
-
-      expect(listingsByLister0.length).to.equal(3)
-      expect(listingsByLister1.length).to.equal(1)
-      expect(listingsByContract.length).to.equal(4)
-
-      //Check to see if new listingsByLister and listingsByContract is correct
-      expect(await beanieMarket.listings(listingToDelist)).to.eql([BIG_ZERO, BIG_ZERO, BIG_ZERO, ADDR_ZERO, ADDR_ZERO]);
-      expect(await beanieMarket.posInListings(listingToDelist)).to.eql([BIG_ZERO, BIG_ZERO]);
-    });
-
-    it("Admin can delist token", async function () {
-      const { beanieMarket, dummyNFT, owner, addrs } = await loadFixture(deployMarketAndListNFTsFixture);
-      const address0 = addrs[0];
-      const listingIds = await beanieMarket.getListingsByContract(dummyNFT.address);
-      const listingToDelist = listingIds[0];
-
-      let listingsByLister0 = await beanieMarket.getListingsByLister(addrs[0].address);
-      let listingsByLister1 = await beanieMarket.getListingsByLister(addrs[1].address);
-      let listingsByContract = await beanieMarket.getListingsByContract(dummyNFT.address);
-      expect(listingsByLister0.length).to.equal(4)
-      expect(listingsByLister1.length).to.equal(1)
-      expect(listingsByContract.length).to.equal(5)
-
-      const listingTailLister = await listingsByLister0[listingsByLister0.length - 1];
-      const listingTailContract = await listingsByLister0[listingsByLister0.length - 1];
-
       await beanieMarket.connect(address0).delistToken(listingToDelist);
 
       listingsByLister0 = await beanieMarket.getListingsByLister(addrs[0].address);
@@ -506,8 +469,8 @@ describe("Beanie Market", async function () {
     });
   })
 
-  describe.only("Delist token errors", function () {
-    it("Cannot list an delist unowned token", async function () {
+  describe.only("Delist token errors and delist cases", function () {
+    it("Cannot delist unowned token", async function () {
       const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndListNFTsFixture);
 
       const listings = await beanieMarket.getListingsByContract(dummyNFT.address);
@@ -515,8 +478,75 @@ describe("Beanie Market", async function () {
       const listing0Data = await beanieMarket.listings(listing0hash);
 
       await expect(beanieMarket.connect(addrs[5]).delistToken(listing0hash)
-        ).to.be.revertedWithCustomError(beanieMarket, "BEANOwnerNotApproved");
+        ).to.be.revertedWithCustomError(beanieMarket, "BEANDelistNotApproved");
     });
+
+    it("Can delist unowned token if caller is owner", async function () {
+      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndListNFTsFixture);
+
+      const listings = await beanieMarket.getListingsByContract(dummyNFT.address);
+      const listing0hash = listings[0];
+      const listing0Data = await beanieMarket.listings(listing0hash);
+
+      await beanieMarket.connect(owner).delistToken(listing0hash);
+    });
+
+    it("Can delist unowned token if lister is no longer token owner.", async function () {
+      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndListNFTsFixture);
+
+      const listings = await beanieMarket.getListingsByContract(dummyNFT.address);
+      const listing0hash = listings[0];
+      const listing0Data = await beanieMarket.listings(listing0hash);
+
+      await expect(beanieMarket.connect(addrs[2]).delistToken(listing0hash)
+        ).to.be.revertedWithCustomError(beanieMarket, "BEANDelistNotApproved");
+
+      await dummyNFT.connect(addrs[0]).transferFrom(addrs[0].address, addrs[1].address, listing0Data.tokenId);
+      await beanieMarket.connect(addrs[2]).delistToken(listing0hash);
+    });
+
+    it.only("Can delist unowned token if expiry has passed.", async function () {
+      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndListNFTsFixture);
+
+      const listings = await beanieMarket.getListingsByContract(dummyNFT.address);
+      const listing0hash = listings[0];
+      const listing0Data = await beanieMarket.listings(listing0hash);
+
+      let block = await ethers.provider.getBlock();
+      let timestamp = block['timestamp'];
+      console.log(listing0Data.expiry, timestamp);
+      console.log(listing0Data.expiry > timestamp)
+
+      await expect(beanieMarket.connect(addrs[2]).delistToken(listing0hash)
+        ).to.be.revertedWithCustomError(beanieMarket, "BEANDelistNotApproved");
+
+      block = await ethers.provider.getBlock();
+      timestamp = block['timestamp'];
+      console.log(listing0Data.expiry, timestamp);
+      console.log(listing0Data.expiry > timestamp)
+
+      await network.provider.send("evm_setNextBlockTimestamp", [Number(listing0Data.expiry) - 10])
+      await network.provider.send("evm_mine")
+
+      block = await ethers.provider.getBlock();
+      timestamp = block['timestamp'];
+      console.log(listing0Data.expiry, timestamp);
+      console.log(listing0Data.expiry > timestamp)
+
+      await expect(beanieMarket.connect(addrs[2]).delistToken(listing0hash)
+        ).to.be.revertedWithCustomError(beanieMarket, "BEANDelistNotApproved");
+
+      await network.provider.send("evm_setNextBlockTimestamp", [Number(listing0Data.expiry) + 1])
+      await network.provider.send("evm_mine")
+
+      block = await ethers.provider.getBlock();
+      timestamp = block['timestamp'];
+      console.log(listing0Data.expiry, timestamp);
+      console.log(listing0Data.expiry > timestamp)
+
+      await beanieMarket.connect(addrs[2]).delistToken(listing0hash);
+    });
+
   })
 
   describe("non-escrow offers", function () {
