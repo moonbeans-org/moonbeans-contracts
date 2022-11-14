@@ -9,6 +9,7 @@ const ADDR_ZERO = ethers.constants.AddressZero;
 describe("Beanie Market", function () {
   async function deployMarketAndNFTFixture() {
     const [owner, ...addrs] = await ethers.getSigners();
+    const admin = addrs[9];
 
     const ERC20 = await ethers.getContractFactory("ERC20Mock");
     const paymentToken = await ERC20.deploy();
@@ -36,7 +37,7 @@ describe("Beanie Market", function () {
     const block = await ethers.provider.getBlock();
     const now = block['timestamp']
 
-    return { beanieMarket, dummyNFT, paymentToken, owner, addrs, now };
+    return { beanieMarket, dummyNFT, paymentToken, owner, admin, addrs, now };
   }
 
   async function deployMarketAndListNFTsFixture() {
@@ -469,6 +470,62 @@ describe("Beanie Market", function () {
     });
   })
 
+  describe.only("Fulfill listing token errors", function () {
+    it("Cannot fulfill listing for an unlisted token", async function () {
+      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndNFTFixture);
+      await expect(beanieMarket.connect(addrs[5]).fulfillListing(ethers.utils.hexZeroPad(0x2, 32), addrs[5].address)
+        ).to.be.revertedWithCustomError(beanieMarket, "BEANCollectionNotEnabled");
+    });
+
+    it("Cannot fulfill listing by sending too little ETH", async function () {
+      const { beanieMarket, dummyNFT, owner, addrs, now } = await loadFixture(deployMarketAndListNFTsFixture);
+      const address0 = addrs[0];
+
+      expect(await dummyNFT.ownerOf(1)).to.equal(addrs[0].address);
+      const listingIds = await beanieMarket.getListingsByContract(dummyNFT.address);
+      const listingToFulfill = listingIds[0];
+      const listingData = await beanieMarket.listings(listingToFulfill);
+
+      await expect(beanieMarket.connect(addrs[5]).fulfillListing(
+        listingToFulfill, addrs[1].address, {value: listingData.price.div(2)})
+        ).to.be.revertedWithCustomError(beanieMarket, "BEANNotEnoughEthSent");
+    });
+
+    it("Cannot fulfill listing if past expiry", async function () {
+      const { beanieMarket, dummyNFT, owner, addrs, now } = await loadFixture(deployMarketAndListNFTsFixture);
+      const address0 = addrs[0];
+
+      expect(await dummyNFT.ownerOf(1)).to.equal(addrs[0].address);
+      const listingIds = await beanieMarket.getListingsByContract(dummyNFT.address);
+      const listingToFulfill = listingIds[0];
+      const listingData = await beanieMarket.listings(listingToFulfill);
+
+      await network.provider.send("evm_setNextBlockTimestamp", [Number(listingData.expiry) + 10])
+      await network.provider.send("evm_mine")
+
+      await expect(beanieMarket.connect(addrs[5]).fulfillListing(
+        listingToFulfill, addrs[1].address, {value: listingData.price})
+        ).to.be.revertedWithCustomError(beanieMarket, "BEANOrderExpired");
+    });
+
+    it("Cannot fulfill listing if token owner has changed", async function () {
+      const { beanieMarket, dummyNFT, owner, addrs, now } = await loadFixture(deployMarketAndListNFTsFixture);
+      const address0 = addrs[0];
+
+      expect(await dummyNFT.ownerOf(1)).to.equal(addrs[0].address);
+
+      const listingIds = await beanieMarket.getListingsByContract(dummyNFT.address);
+      const listingToFulfill = listingIds[0];
+      const listingData = await beanieMarket.listings(listingToFulfill);
+
+      await dummyNFT.connect(addrs[0]).transferFrom(addrs[0].address, addrs[1].address, listingData.tokenId);
+
+      await expect(beanieMarket.connect(addrs[5]).fulfillListing(
+        listingToFulfill, addrs[4].address, {value: listingData.price})
+        ).to.be.revertedWithCustomError(beanieMarket, "BEANListingNotActive");
+    });
+  })
+
   describe.skip("Delist token errors and delist cases", function () { // works, fixtures just break -- hh problem
     it("Cannot delist unowned token", async function () {
       const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndListNFTsFixture);
@@ -481,7 +538,7 @@ describe("Beanie Market", function () {
         ).to.be.revertedWithCustomError(beanieMarket, "BEANDelistNotApproved");
     });
 
-    it("Can delist unowned token if caller is owner", async function () {
+    it("Can delist unowned token if caller is admin", async function () {
       const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndListNFTsFixture);
 
       const listings = await beanieMarket.getListingsByContract(dummyNFT.address);
@@ -512,29 +569,17 @@ describe("Beanie Market", function () {
       const listing0hash = listings[0];
       const listing0Data = await beanieMarket.listings(listing0hash);
 
-      let block = await ethers.provider.getBlock();
-      let timestamp = block['timestamp'];
-
       await expect(beanieMarket.connect(addrs[2]).delistToken(listing0hash)
         ).to.be.revertedWithCustomError(beanieMarket, "BEANDelistNotApproved");
 
-      block = await ethers.provider.getBlock();
-      timestamp = block['timestamp'];
-
       await network.provider.send("evm_setNextBlockTimestamp", [Number(listing0Data.expiry) - 10])
       await network.provider.send("evm_mine")
-
-      block = await ethers.provider.getBlock();
-      timestamp = block['timestamp'];
 
       await expect(beanieMarket.connect(addrs[2]).delistToken(listing0hash)
         ).to.be.revertedWithCustomError(beanieMarket, "BEANDelistNotApproved");
 
       await network.provider.send("evm_setNextBlockTimestamp", [Number(listing0Data.expiry) + 1])
       await network.provider.send("evm_mine")
-
-      block = await ethers.provider.getBlock();
-      timestamp = block['timestamp'];
 
       await beanieMarket.connect(addrs[2]).delistToken(listing0hash);
     });
@@ -605,7 +650,6 @@ describe("Beanie Market", function () {
           false
         ]
       )
-
     });
 
     it("Fulfill non-escrow offer ownership change", async function () {
@@ -875,7 +919,48 @@ describe("Beanie Market", function () {
       expect(await collectionOwnerBalAfter).to.eql(collectionOwnerBalBefore.add(collectionOwnerFeeAmount));
 
     });
+  });
 
+  describe.only("Full non-escrow errors", function () {
+
+    it("Cannot accept non-existent offer", async function () {
+      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeOffersFixture);
+      await expect(beanieMarket.connect(addrs[2]).acceptOffer(ethers.utils.hexZeroPad(0x2, 32))
+        ).to.be.revertedWithCustomError(beanieMarket, "BEANCollectionNotEnabled");
+    });
+
+    it("Cannot accept offer past expiry", async function () {
+      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeOffersFixture);
+
+      const addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
+
+      const offer0Hash = addr2offers[0];
+      const offer0Data = await beanieMarket.offers(addr2offers[0]);
+
+      await network.provider.send("evm_setNextBlockTimestamp", [Number(offer0Data.expiry) + 10])
+      await network.provider.send("evm_mine")
+
+      await dummyNFT.connect(addrs[0]).setApprovalForAll(beanieMarket.address, true);
+      await expect(beanieMarket.connect(addrs[2]).acceptOffer(offer0Hash)
+        ).to.be.revertedWithCustomError(beanieMarket, "BEANOrderExpired");
+    });
+
+    it("Cannot accept offer if not current token owner", async function () {
+      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeOffersFixture);
+
+      const addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
+
+      const offer0Hash = addr2offers[0];
+      const offer0Data = await beanieMarket.offers(addr2offers[0]);
+
+      await dummyNFT.connect(addrs[0]).setApprovalForAll(beanieMarket.address, true);
+      await expect(beanieMarket.connect(addrs[5]).acceptOffer(offer0Hash)
+        ).to.be.revertedWithCustomError(beanieMarket, "BEANCallerNotOwner");
+    });
+
+  });
+
+  describe("Cancel non-escrow offer", function () {
     it("Offerer can cancel non-escrow offer", async function () {
       const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeOffersFixture);
 
@@ -892,14 +977,81 @@ describe("Beanie Market", function () {
       expect(await beanieMarket.posInOffers(addr2offersTail)).to.eql(BIG_ZERO);
       expect(await beanieMarket.offers(offerHash)).to.eql([BIG_ZERO, BIG_ZERO, BIG_ZERO, ADDR_ZERO, ADDR_ZERO, false]);
     });
-  });
 
-  describe("Cancel non-escrow offer", function () {
-    
+    it("Token owner can cancel non-escrow offer", async function () {
+      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeOffersFixture);
+
+      let addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
+      const addr2offersTail = await addr2offers[addr2offers.length - 1];
+
+      let offerHash = addr2offers[0];
+
+      await beanieMarket.connect(addrs[0]).cancelOffer(offerHash);
+
+      addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
+
+      expect(addr2offers).to.not.contain(offerHash)
+      expect(await beanieMarket.posInOffers(addr2offersTail)).to.eql(BIG_ZERO);
+      expect(await beanieMarket.offers(offerHash)).to.eql([BIG_ZERO, BIG_ZERO, BIG_ZERO, ADDR_ZERO, ADDR_ZERO, false]);
+    });
+
+    it("Admin can cancel non-escrow offer", async function () {
+      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeOffersFixture);
+
+      let addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
+      const addr2offersTail = await addr2offers[addr2offers.length - 1];
+
+      let offerHash = addr2offers[0];
+
+      await beanieMarket.connect(owner).cancelOffer(offerHash);
+
+      addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
+
+      expect(addr2offers).to.not.contain(offerHash)
+      expect(await beanieMarket.posInOffers(addr2offersTail)).to.eql(BIG_ZERO);
+      expect(await beanieMarket.offers(offerHash)).to.eql([BIG_ZERO, BIG_ZERO, BIG_ZERO, ADDR_ZERO, ADDR_ZERO, false]);
+    });
+
+    it("Anyone can cancel non-escrow offer if past expiry", async function () {
+      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeOffersFixture);
+
+      let addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
+      const addr2offersTail = await addr2offers[addr2offers.length - 1];
+
+      let offerHash = addr2offers[0];
+      const offer0Data = await beanieMarket.offers(offerHash);
+      const expiry = offer0Data.expiry
+
+      await expect(beanieMarket.connect(addrs[5]).cancelOffer(offerHash)
+        ).to.be.revertedWithCustomError(beanieMarket, "BEANNotAuthorized");
+
+      await network.provider.send("evm_setNextBlockTimestamp", [Number(expiry) + 10])
+      await network.provider.send("evm_mine")
+
+      await beanieMarket.connect(addrs[8]).cancelOffer(offerHash);
+
+      addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
+
+      expect(addr2offers).to.not.contain(offerHash)
+      expect(await beanieMarket.posInOffers(addr2offersTail)).to.eql(BIG_ZERO);
+      expect(await beanieMarket.offers(offerHash)).to.eql([BIG_ZERO, BIG_ZERO, BIG_ZERO, ADDR_ZERO, ADDR_ZERO, false]);
+    });
   });
 
   describe("Cancel non-escrow offer errors", function () {
-    
+    it("Address cannot cancel if not offerer, token owner, admin, or past expiry", async function () {
+      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeOffersFixture);
+
+      let addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
+      const addr2offersTail = await addr2offers[addr2offers.length - 1];
+
+      let offerHash = addr2offers[0];
+      const offer0Data = await beanieMarket.offers(offerHash);
+      const expiry = offer0Data.expiry
+
+      await expect(beanieMarket.connect(addrs[5]).cancelOffer(offerHash)
+        ).to.be.revertedWithCustomError(beanieMarket, "BEANNotAuthorized");
+    });
   });
 
   describe("escrow offers", function () {
@@ -1263,7 +1415,49 @@ describe("Beanie Market", function () {
       expect(await ethers.provider.getBalance(beanHolderAddress)).to.eql(beanieHolderFeeAmount.add(beanieHolderFeeAmount_1));
       expect(await ethers.provider.getBalance(beanBuybackAddress)).to.eql(beanBuybackFeeAmount.add(beanBuybackFeeAmount_1));
     });
+  });
 
+  describe.only("Full escrow errors", function () {
+
+    it("Cannot accept non-existent offer", async function () {
+      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
+      await expect(beanieMarket.connect(addrs[2]).acceptOffer(ethers.utils.hexZeroPad(0x2, 32))
+        ).to.be.revertedWithCustomError(beanieMarket, "BEANCollectionNotEnabled");
+    });
+
+    it("Cannot accept offer past expiry", async function () {
+      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
+
+      const addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
+
+      const offer0Hash = addr2offers[0];
+      const offer0Data = await beanieMarket.offers(addr2offers[0]);
+
+      await network.provider.send("evm_setNextBlockTimestamp", [Number(offer0Data.expiry) + 10])
+      await network.provider.send("evm_mine")
+
+      await dummyNFT.connect(addrs[0]).setApprovalForAll(beanieMarket.address, true);
+      await expect(beanieMarket.connect(addrs[2]).acceptOffer(offer0Hash)
+        ).to.be.revertedWithCustomError(beanieMarket, "BEANOrderExpired");
+    });
+
+    it("Cannot accept offer if not current token owner", async function () {
+      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
+
+      const addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
+
+      const offer0Hash = addr2offers[0];
+      const offer0Data = await beanieMarket.offers(addr2offers[0]);
+
+      await dummyNFT.connect(addrs[0]).setApprovalForAll(beanieMarket.address, true);
+      await expect(beanieMarket.connect(addrs[5]).acceptOffer(offer0Hash)
+        ).to.be.revertedWithCustomError(beanieMarket, "BEANCallerNotOwner");
+    });
+
+  });
+
+  
+  describe("Cancel escrow offer", function () {
     it("Offerer can cancel escrow offer, offerer recieves escrow back", async function () {
       const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
 
@@ -1290,16 +1484,100 @@ describe("Beanie Market", function () {
       expect(await beanieMarket.offers(offerHash)).to.eql([BIG_ZERO, BIG_ZERO, BIG_ZERO, ADDR_ZERO, ADDR_ZERO, false]);
     });
 
-  });
+    it("Offerer can cancel escrow offer", async function () {
+      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
 
-  describe("Cancel escrow offer", function () {
-    
+      let addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
+      const addr2offersTail = await addr2offers[addr2offers.length - 1];
+
+      let offerHash = addr2offers[0];
+
+      await expect(beanieMarket.connect(addrs[2]).cancelOffer(offerHash)).to.changeEtherBalances(
+        [beanieMarket.address, addrs[2].address], [ONE_ETH.mul(-1), ONE_ETH]);
+
+      addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
+
+      expect(addr2offers).to.not.contain(offerHash)
+      expect(await beanieMarket.posInOffers(addr2offersTail)).to.eql(BIG_ZERO);
+      expect(await beanieMarket.offers(offerHash)).to.eql([BIG_ZERO, BIG_ZERO, BIG_ZERO, ADDR_ZERO, ADDR_ZERO, false]);
+    });
+
+    it("Token owner can cancel escrow offer", async function () {
+      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
+
+      let addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
+      const addr2offersTail = await addr2offers[addr2offers.length - 1];
+
+      let offerHash = addr2offers[0];
+
+      await expect(beanieMarket.connect(addrs[0]).cancelOffer(offerHash)).to.changeEtherBalances(
+        [beanieMarket.address, addrs[2].address], [ONE_ETH.mul(-1), ONE_ETH]);;
+
+      addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
+
+      expect(addr2offers).to.not.contain(offerHash)
+      expect(await beanieMarket.posInOffers(addr2offersTail)).to.eql(BIG_ZERO);
+      expect(await beanieMarket.offers(offerHash)).to.eql([BIG_ZERO, BIG_ZERO, BIG_ZERO, ADDR_ZERO, ADDR_ZERO, false]);
+    });
+
+    it("Admin can cancel escrow offer", async function () {
+      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
+
+      let addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
+      const addr2offersTail = await addr2offers[addr2offers.length - 1];
+
+      let offerHash = addr2offers[0];
+
+      await expect(beanieMarket.connect(owner).cancelOffer(offerHash)).to.changeEtherBalances(
+        [beanieMarket.address, addrs[2].address], [ONE_ETH.mul(-1), ONE_ETH]);
+
+      addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
+
+      expect(addr2offers).to.not.contain(offerHash)
+      expect(await beanieMarket.posInOffers(addr2offersTail)).to.eql(BIG_ZERO);
+      expect(await beanieMarket.offers(offerHash)).to.eql([BIG_ZERO, BIG_ZERO, BIG_ZERO, ADDR_ZERO, ADDR_ZERO, false]);
+    });
+
+    it("Anyone can cancel escrow offer if past expiry", async function () {
+      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
+
+      let addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
+      const addr2offersTail = await addr2offers[addr2offers.length - 1];
+
+      let offerHash = addr2offers[0];
+      const offer0Data = await beanieMarket.offers(offerHash);
+      const expiry = offer0Data.expiry
+
+      await expect(beanieMarket.connect(addrs[5]).cancelOffer(offerHash)
+        ).to.be.revertedWithCustomError(beanieMarket, "BEANNotAuthorized");
+
+      await network.provider.send("evm_setNextBlockTimestamp", [Number(expiry) + 10])
+      await network.provider.send("evm_mine")
+
+      await expect(beanieMarket.connect(addrs[8]).cancelOffer(offerHash)).to.changeEtherBalances(
+        [beanieMarket.address, addrs[2].address], [ONE_ETH.mul(-1), ONE_ETH]);
+
+      addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
+
+      expect(addr2offers).to.not.contain(offerHash)
+      expect(await beanieMarket.posInOffers(addr2offersTail)).to.eql(BIG_ZERO);
+      expect(await beanieMarket.offers(offerHash)).to.eql([BIG_ZERO, BIG_ZERO, BIG_ZERO, ADDR_ZERO, ADDR_ZERO, false]);
+    });
   });
 
   describe("Cancel escrow offer errors", function () {
-    it("3rd party can cancel offer, offerer recieves escrow back", async function () {
-      expect(1).to.equal(0);
-    });
+    it("Address cannot cancel if not offerer, token owner, admin, or past expiry", async function () {
+      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
 
+      let addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
+      const addr2offersTail = await addr2offers[addr2offers.length - 1];
+
+      let offerHash = addr2offers[0];
+      const offer0Data = await beanieMarket.offers(offerHash);
+      const expiry = offer0Data.expiry
+
+      await expect(beanieMarket.connect(addrs[5]).cancelOffer(offerHash)
+        ).to.be.revertedWithCustomError(beanieMarket, "BEANNotAuthorized");
+    });
   });
 });

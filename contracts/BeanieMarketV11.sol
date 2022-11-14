@@ -36,6 +36,8 @@ error BEANNotEnoughInEscrow();
 error BEANOrderExpired();
 error BEANBadExpiry();
 error BEANNoOfferFound();
+error BEANTokenNotListed();
+error BEANNotEnoughEthSent();
 
 //Escrow
 error BEANWithdrawNotEnabled();
@@ -166,6 +168,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     }
 
     constructor(address _TOKEN) {
+        administrators[msg.sender] = true;
         TOKEN = _TOKEN;
         approveSelf();
     }
@@ -197,7 +200,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         if (!token.isApprovedForAll(msg.sender, address(this)))
             revert BEANContractNotApproved();
         if (expiry != 0 && expiry < block.timestamp)
-            revert BEANBadExpiry();
+            revert BEANOrderExpired();
 
         //Generate unique listing hash, increment nonce.
         bytes32 listingHash = computeOrderHash(msg.sender, ca, tokenId, userNonces[msg.sender]);
@@ -239,7 +242,7 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
             block.timestamp
         );
     }
-
+    // REVIEW
     // *Public* token delisting function, requiring either ownership OR invalidity to delist.
     function delistToken(bytes32 listingId) public {
         Listing memory listing = listings[listingId];
@@ -247,7 +250,6 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         address tknOwner = token.ownerOf(listing.tokenId);
         if (
             msg.sender != tknOwner && 
-            msg.sender != owner() &&
             !administrators[msg.sender] && 
             listing.lister == tknOwner &&
             listing.expiry > block.timestamp
@@ -268,17 +270,19 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
 
     // Allows a buyer to buy at the listed price.
     function fulfillListing(bytes32 listingId, address to) external payable nonReentrant {
-        if (tradingPaused) revert BEANTradingPaused();
+        if (tradingPaused) 
+            revert BEANTradingPaused();
+        
         Listing memory listing = listings[listingId];
-        require(
-            collectionTradingEnabled[listing.contractAddress],
-            "Trading for this collection is not enabled."
-        );
-        require(listing.price != 0, "This token is not currently listed.");
-        require(
-            listing.price <= msg.value,
-            "The amount sent is less than the asking price."
-        );
+        
+        if (!collectionTradingEnabled[listing.contractAddress])
+            revert BEANCollectionNotEnabled();
+        if (listing.price == 0)
+            revert BEANTokenNotListed();
+        if (msg.value < listing.price)
+            revert BEANNotEnoughEthSent();
+        if (listing.expiry != 0 && block.timestamp > listing.expiry)
+            revert BEANOrderExpired();
 
         // verify that the listing is still valid
         address oldOwner = listing.lister;
@@ -363,9 +367,12 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
             revert BEANTradingPaused();
         if (price == 0)
             revert BEANZeroPrice();
-        if (IERC20(TOKEN).allowance(msg.sender, address(this)) < price)
+
+        IERC20 token = IERC20(TOKEN);
+
+        if (token.allowance(msg.sender, address(this)) < price)
             revert BEANContractNotApproved();
-        if (IERC20(TOKEN).balanceOf(msg.sender) < price)
+        if (token.balanceOf(msg.sender) < price)
             revert BEANUserTokensLow();
         bytes32 offerHash = computeOrderHash(msg.sender, ca, tokenId, userNonces[msg.sender]);
         unchecked {++userNonces[msg.sender];}
@@ -436,7 +443,6 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     }
 
     // Cancel an offer (escrowed or not).
-    // TODO: Ensure that if userCanWithdrawEscrow flag is on, collateralized accounts still return escrowed funds.
     function cancelOffer(
         bytes32 offerHash
     ) external nonReentrant {
@@ -489,14 +495,14 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
             revert BEANTradingPaused();
         Offer memory offer = offers[offerHash];
         IERC721 _nft = IERC721(offer.contractAddress);
+        if (!collectionTradingEnabled[offer.contractAddress])
+            revert BEANCollectionNotEnabled();
         if (offer.price == 0)
             revert BEANNoOfferFound();
-        if (offer.expiry < block.timestamp)
+        if (offer.expiry != 0 && block.timestamp > offer.expiry)
             revert BEANOrderExpired();
         if(msg.sender != _nft.ownerOf(offer.tokenId))
             revert BEANCallerNotOwner();
-        if (!collectionTradingEnabled[offer.contractAddress])
-            revert BEANCollectionNotEnabled();
 
         delete offers[offerHash];
         _updateOfferPos(offerHash, offer.offerer);
@@ -694,12 +700,13 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         TOKEN = _token;
     }
 
-    function clearListing(bytes32 listingId) external onlyAdmins {
-        delete listings[listingId];
-    }
-
     function setTrading(bool value) external onlyOwner {
         tradingPaused = value;
+    }
+
+    //TODO: This must also update storage structs
+    function clearListing(bytes32 listingId) external onlyAdmins {
+        delete listings[listingId];
     }
 
     // Convenience function for listing / Partially implements EIP2981
