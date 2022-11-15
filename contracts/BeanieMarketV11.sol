@@ -198,6 +198,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         bytes32 listingHash = computeOrderHash(msg.sender, ca, tokenId, userNonces[msg.sender]);
         unchecked {++userNonces[msg.sender];}
 
+        // If this token was already listed, handle updating previous listing hash.
         bytes32 oldListingHash = currentListingOrderHash[ca][tokenId];
         if (oldListingHash != bytes32(0)) {
             Listing memory listing = listings[oldListingHash];
@@ -241,18 +242,24 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         Listing memory listing = listings[listingId];
         IERC721 token = IERC721(listing.contractAddress);
         address tknOwner = token.ownerOf(listing.tokenId);
-        if (
-            msg.sender != tknOwner && 
-            !administrators[msg.sender] && 
-            listing.lister == tknOwner &&
-            listing.expiry > block.timestamp
-        )
-            revert BEANDelistNotApproved();
 
+        // If listing is invalid due to expiry or transfer, (or caller has admin perms), anyone can delist. 
+        // TODO: Add test for the isApprovedForAll check.
+        if (
+            msg.sender != tknOwner &&                          // If not owner
+            !administrators[msg.sender] &&                     // and not admin
+            listing.lister == tknOwner &&                      // and current owner matches og lister
+            token.isApprovedForAll(tknOwner, address(this)) && // and token is approved for trade
+            listing.expiry > block.timestamp                   // and listing is not expired
+        )
+            revert BEANDelistNotApproved();                    // you can't delist, ser
+
+        // Clean up old listing from all lister array, collection array, all listings, and current listings.
         _updateListingPos(listingId, tknOwner, listing.contractAddress);
         delete listings[listingId];
         delete currentListingOrderHash[listing.contractAddress][listing.tokenId];
 
+        // Index moi
         emit TokenDelisted(
             listing.contractAddress,
             listing.tokenId,
@@ -261,7 +268,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         );
     }
 
-    // Allows a buyer to buy at the listed price.
+    // Allows a buyer to buy at the listed price - sending the purchased token to `to`.
     function fulfillListing(bytes32 listingId, address to) external payable nonReentrant {
         if (tradingPaused) 
             revert BEANTradingPaused();
@@ -277,19 +284,19 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         if (listing.expiry != 0 && block.timestamp > listing.expiry)
             revert BEANOrderExpired();
 
-        // verify that the listing is still valid
-        address oldOwner = listing.lister;
+        // Verify that the listing is still valid (current owner is original lister)
+        address originalLister = listing.lister;
         IERC721 token = IERC721(listing.contractAddress);
 
-        if(oldOwner != token.ownerOf(listing.tokenId)) 
+        if(originalLister != token.ownerOf(listing.tokenId)) 
             revert BEANListingNotActive();
 
-        //effects - remove listing
-        _updateListingPos(listingId, oldOwner, listing.contractAddress);
+        // Effects - cleanup listing data structures
+        _updateListingPos(listingId, originalLister, listing.contractAddress);
         delete listings[listingId];
 
         //Interaction - transfer NFT and process fees
-        token.safeTransferFrom(oldOwner, to, listing.tokenId);
+        token.safeTransferFrom(originalLister, to, listing.tokenId);
 
         //fees
         //FIXME: Nested ifs kind of suck, see if I can linearize this
@@ -301,7 +308,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
                 uint256 collectionOwnerFeeAmount,
                 uint256 saleNetFees
             ) = _calculateAmounts(listing.contractAddress, listing.price);
-            _sendEth(oldOwner, saleNetFees);
+            _sendEth(originalLister, saleNetFees);
             _sendEth( collectionOwners[listing.contractAddress], collectionOwnerFeeAmount);
             if (autoSendFees) {
                 _processDevFeesEth(devFeeAmount, beanieHolderFeeAmount, beanBuybackFeeAmount);
@@ -310,10 +317,10 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
             }
         }
         else {
-            _sendEth(oldOwner, listing.price);
+            _sendEth(originalLister, listing.price);
         }
         emit TokenPurchased(
-            oldOwner,
+            originalLister,
             msg.sender,
             listing.price,
             listing.contractAddress,
