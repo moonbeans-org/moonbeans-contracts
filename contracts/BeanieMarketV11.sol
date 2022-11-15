@@ -194,7 +194,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         if (expiry != 0 && expiry < block.timestamp)
             revert BEANBadExpiry();
 
-        //Generate unique listing hash, increment nonce.
+        // Generate unique listing hash, increment nonce.
         bytes32 listingHash = computeOrderHash(msg.sender, ca, tokenId, userNonces[msg.sender]);
         unchecked {++userNonces[msg.sender];}
 
@@ -205,7 +205,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
             delete listings[oldListingHash];
         }
 
-        //Store the new listing.
+        // Store the new listing.
         listings[listingHash] = Listing(
             tokenId,
             uint128(price),
@@ -214,15 +214,18 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
             msg.sender
         );
 
+        // Stick this new listing at the end of both tracking arrays
         posInListings[listingHash] = ListingPos(
             uint128(listingsByLister[msg.sender].length),
             uint128(listingsByContract[ca].length)
         );
         listingsByLister[msg.sender].push(listingHash);
         listingsByContract[ca].push(listingHash);
+
+        // Keeps track of current listing for this specific token.
         currentListingOrderHash[ca][tokenId] = listingHash;
 
-        //Index me baby
+        // Index me baby
         emit TokenListed(
             ca,
             tokenId,
@@ -320,24 +323,39 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         );
     }
 
+    // Called when an existing active listing needs to be removed or replaced.
     function updateListingPos(bytes32 listingId, address tknOwner, address listingAddress) internal {
+        //Get the position of this listing in both listing arrays (user/collection)
         ListingPos memory listingPos_ = posInListings[listingId];
-        bytes32 offerHashToReplace;
+        bytes32 listingHashToReplace;
+
+        // 1. Handle updating the array that tracks all of a user's listings.
         uint256 lastListerIndex = listingsByLister[tknOwner].length-1;
 
-        offerHashToReplace = listingsByLister[tknOwner][lastListerIndex];
+        // Get the last listing hash in the array
+        listingHashToReplace = listingsByLister[tknOwner][lastListerIndex];
+        // Move the last listing hash to the replacement position, and shorten the array.
         listingsByLister[tknOwner].swapPop(listingPos_.posInListingsByLister);
+
+        // If we have something still in the array, need to update posInListings.
         if (listingsByLister[tknOwner].length > 0) {
-            posInListings[offerHashToReplace].posInListingsByLister = listingPos_.posInListingsByLister;
+            posInListings[listingHashToReplace].posInListingsByLister = listingPos_.posInListingsByLister;
         }
 
+        // 2. Handle updating the array that tracks all of a collection's listings.
         uint256 lastContractIndex = listingsByContract[listingAddress].length-1;
 
-        offerHashToReplace = listingsByContract[listingAddress][lastContractIndex];
+        // Get the last listing hash in the array
+        listingHashToReplace = listingsByContract[listingAddress][lastContractIndex];
+        // Move the last listing hash to the replacement position, and shorten the array.
         listingsByContract[listingAddress].swapPop(listingPos_.posInListingsByContract);
+
+        // If we have something still in the array, need to update posInListings.
         if (listingsByContract[listingAddress].length > 0) {
-            posInListings[offerHashToReplace].posInListingsByContract = listingPos_.posInListingsByContract;
+            posInListings[listingHashToReplace].posInListingsByContract = listingPos_.posInListingsByContract;
         }
+
+        // 3. Finally, delete the listing hash that we no longer care about.
         delete posInListings[listingId];
     }
 
