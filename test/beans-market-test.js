@@ -921,7 +921,7 @@ describe("Beanie Market", function () {
     });
   });
 
-  describe.only("Make non-escrow offer errors", function() {
+  describe("Make non-escrow offer errors", function() {
     it("Cannot make offer with zero price", async function () {
       const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
       await expect(beanieMarket.connect(addrs[0]).makeOffer(dummyNFT.address, 4, 0, now)
