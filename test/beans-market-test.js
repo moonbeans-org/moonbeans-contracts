@@ -470,7 +470,7 @@ describe("Beanie Market", function () {
     });
   })
 
-  describe.only("Fulfill listing token errors", function () {
+  describe.skip("Fulfill listing token errors", function () {
     it("Cannot fulfill listing for an unlisted token", async function () {
       const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndNFTFixture);
       await expect(beanieMarket.connect(addrs[5]).fulfillListing(ethers.utils.hexZeroPad(0x2, 32), addrs[5].address)
@@ -921,7 +921,41 @@ describe("Beanie Market", function () {
     });
   });
 
-  describe.only("Full non-escrow errors", function () {
+  describe.only("Make non-escrow offer errors", function() {
+    it("Cannot make offer with zero price", async function () {
+      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
+      await expect(beanieMarket.connect(addrs[0]).makeOffer(dummyNFT.address, 4, 0, now)
+        ).to.be.revertedWithCustomError(beanieMarket, "BEANZeroPrice");
+    });
+
+    it("Cannot make offer if contract is not approved", async function () {
+      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
+      await expect(beanieMarket.connect(addrs[0]).makeOffer(dummyNFT.address, 4, ONE_ETH, now)
+        ).to.be.revertedWithCustomError(beanieMarket, "BEANContractNotApproved");
+    });
+
+    it("Cannot make offer if account does not own enough paymentToken", async function () {
+      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
+
+      await paymentToken.connect(addrs[11]).approve(beanieMarket.address, ethers.constants.MaxUint256);
+
+      await expect(beanieMarket.connect(addrs[11]).makeOffer(dummyNFT.address, 4, ONE_ETH, now)
+        ).to.be.revertedWithCustomError(beanieMarket, "BEANUserTokensLow");
+    });
+
+    it("Cannot make offer with expiry before now", async function () {
+      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
+
+      await paymentToken.connect(addrs[0]).approve(beanieMarket.address, ethers.constants.MaxUint256);
+
+      await expect(beanieMarket.connect(addrs[0]).makeOffer(dummyNFT.address, 4, ONE_ETH, now-1)
+        ).to.be.revertedWithCustomError(beanieMarket, "BEANBadExpiry");
+      await expect(beanieMarket.connect(addrs[0]).makeOffer(dummyNFT.address, 4, ONE_ETH, now)
+        ).to.be.revertedWithCustomError(beanieMarket, "BEANBadExpiry");
+    });
+  });
+
+  describe("Fulfill non-escrow errors", function () {
 
     it("Cannot accept non-existent offer", async function () {
       const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeOffersFixture);
@@ -1417,8 +1451,24 @@ describe("Beanie Market", function () {
     });
   });
 
-  describe.only("Full escrow errors", function () {
+  describe("Make escrow offer errors", function() {
+    it("Cannot make offer with zero price", async function () {
+      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
+      await expect(beanieMarket.connect(addrs[0]).makeEscrowedOffer(dummyNFT.address, 4, now, {value: ethers.constants.Zero})
+        ).to.be.revertedWithCustomError(beanieMarket, "BEANZeroPrice");
+    });
 
+    it("Cannot make offer with expiry before now", async function () {
+      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
+
+      await expect(beanieMarket.connect(addrs[0]).makeEscrowedOffer(dummyNFT.address, 4, now-1, {value: ONE_ETH})
+        ).to.be.revertedWithCustomError(beanieMarket, "BEANBadExpiry");
+      await expect(beanieMarket.connect(addrs[0]).makeEscrowedOffer(dummyNFT.address, 4, now, {value: ONE_ETH})
+        ).to.be.revertedWithCustomError(beanieMarket, "BEANBadExpiry");
+    });
+  });
+
+  describe("Fulfill escrow offer errors", function () {
     it("Cannot accept non-existent offer", async function () {
       const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
       await expect(beanieMarket.connect(addrs[2]).acceptOffer(ethers.utils.hexZeroPad(0x2, 32))
@@ -1456,7 +1506,6 @@ describe("Beanie Market", function () {
 
   });
 
-  
   describe("Cancel escrow offer", function () {
     it("Offerer can cancel escrow offer, offerer recieves escrow back", async function () {
       const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);

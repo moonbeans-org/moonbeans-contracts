@@ -44,7 +44,7 @@ error BEANWithdrawNotEnabled();
 error BEANEscrowOverWithdraw();
 error BEANZeroInEscrow();
 
-contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
+contract BeanieMarketV11 is ReentrancyGuard, Ownable {
     using BeanUtils for bytes32[];
     using BeanUtils for address[];
 
@@ -91,7 +91,6 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
     );
     event EscrowReturned(address indexed user, uint256 indexed price);
 
-    // Constants TODO: remove, unused
     uint256 constant MAX_INT = ~uint256(0);
     uint128 constant SMOL_MAX_INT = ~uint128(0);
 
@@ -173,18 +172,17 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         approveSelf();
     }
 
-    // Required in order to receive ERC 721's.
-    function onERC721Received(
-        address,
-        address,
-        uint256,
-        bytes memory
-    ) public virtual override returns (bytes4) {
-        return this.onERC721Received.selector;
-    }
+    // // Required in order to receive ERC 721s.
+    // function onERC721Received(
+    //     address,
+    //     address,
+    //     uint256,
+    //     bytes memory
+    // ) public virtual override returns (bytes4) {
+    //     return this.onERC721Received.selector;
+    // }
 
     // LISTINGS
-
     // Lists a token at the specified price point.
     function listToken(
         address ca,
@@ -200,13 +198,11 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         if (!token.isApprovedForAll(msg.sender, address(this)))
             revert BEANContractNotApproved();
         if (expiry != 0 && expiry < block.timestamp)
-            revert BEANOrderExpired();
+            revert BEANBadExpiry();
 
         //Generate unique listing hash, increment nonce.
         bytes32 listingHash = computeOrderHash(msg.sender, ca, tokenId, userNonces[msg.sender]);
         unchecked {++userNonces[msg.sender];}
-
-        //Remove the old listing at contractAddress, tokenId. TODO: test
 
         bytes32 oldListingHash = currentListingOrderHash[ca][tokenId];
         if (oldListingHash != bytes32(0)) {
@@ -374,6 +370,9 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
             revert BEANContractNotApproved();
         if (token.balanceOf(msg.sender) < price)
             revert BEANUserTokensLow();
+        if (expiry != 0 && expiry < block.timestamp)
+            revert BEANBadExpiry();
+
         bytes32 offerHash = computeOrderHash(msg.sender, ca, tokenId, userNonces[msg.sender]);
         unchecked {++userNonces[msg.sender];}
         _storeOffer(offerHash, ca, msg.sender, tokenId, price, expiry, false);
@@ -386,13 +385,18 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         uint256 tokenId,
         uint256 expiry
     ) public payable nonReentrant {
-        if (tradingPaused)
-            revert BEANTradingPaused();
         if (msg.value > SMOL_MAX_INT || expiry > SMOL_MAX_INT)
             revert BEANIntegerOverFlow();
+        if (tradingPaused)
+            revert BEANTradingPaused();
+        
         uint256 price = msg.value;
 
-        if (price == 0) revert BEANZeroPrice();
+        if (price == 0) 
+            revert BEANZeroPrice();
+        if (expiry != 0 && expiry < block.timestamp)
+            revert BEANBadExpiry();
+
         totalEscrowedAmount += price;
         totalInEscrow[msg.sender] += price;
 
@@ -520,7 +524,6 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
 
     function _updateOfferPos(bytes32 offerId, address offerer) internal {
         OfferPos memory offerPos_ = posInOffers[offerId];
-        //TODO: Try scoping this for gas cost
         bytes32 offerHashToReplace;
         //Cleanup accessory mappings. We pass the mapping results directly to the swapPop function to save memory height.
         uint256 lastOffererIndex = offerHashesByBuyer[offerer].length-1;
@@ -704,8 +707,10 @@ contract BeanieMarketV11 is IERC721Receiver, ReentrancyGuard, Ownable {
         tradingPaused = value;
     }
 
-    //TODO: This must also update storage structs
+    //TODO: Test
     function clearListing(bytes32 listingId) external onlyAdmins {
+        Listing memory listing = listings[listingId];
+        updateListingPos(listingId, listing.lister, listing.contractAddress);
         delete listings[listingId];
     }
 
