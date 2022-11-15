@@ -292,14 +292,15 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
             revert BEANListingNotActive();
 
         // Effects - cleanup listing data structures
+        // TODO: Validate all 4 listing data structures, post fufill.
         _updateListingPos(listingId, originalLister, listing.contractAddress);
         delete listings[listingId];
+        delete currentListingOrderHash[listing.contractAddress][listing.tokenId];
 
-        //Interaction - transfer NFT and process fees
+        // Interaction - transfer NFT and process fees. Will fail if token no longer approved.
         token.safeTransferFrom(originalLister, to, listing.tokenId);
 
-        //fees
-        //FIXME: Nested ifs kind of suck, see if I can linearize this
+        //Fees
         if (feesOn) {
             (
                 uint256 devFeeAmount,
@@ -308,8 +309,8 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
                 uint256 collectionOwnerFeeAmount,
                 uint256 saleNetFees
             ) = _calculateAmounts(listing.contractAddress, listing.price);
-            _sendEth(originalLister, saleNetFees);
-            _sendEth( collectionOwners[listing.contractAddress], collectionOwnerFeeAmount);
+            _sendEth(originalLister, saleNetFees); // Pay lister
+            _sendEth( collectionOwners[listing.contractAddress], collectionOwnerFeeAmount); // Pay royalties
             if (autoSendFees) {
                 _processDevFeesEth(devFeeAmount, beanieHolderFeeAmount, beanBuybackFeeAmount);
             } else {
@@ -319,6 +320,8 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         else {
             _sendEth(originalLister, listing.price);
         }
+
+        // Ty for your business
         emit TokenPurchased(
             originalLister,
             msg.sender,
@@ -336,7 +339,9 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
     * to both arrays. No other functions delete from or manage the ordering of arrays, so for a non-zero
     * listingId, listingsByLister[address] and listingsByContract[address] will ALWAYS have an entry.
     * 
-    * @dev Calls into this function should ALWAYS be accompanied by a delete listings[listingHash].
+    * @dev Calls into this function should ALWAYS be accompanied by a delete listings[listingHash],
+    * and potentially the matching entry in currentListingOrderHash. TODO: rename to `cleanupListing`? and
+    * merge the `delete` calls into this function.
     */
 
     // Called when an existing active listing needs to be removed or replaced.
@@ -377,7 +382,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
 
     //---------------------------------
     //
-    //            ORDERS
+    //            OFFERS
     //
     //---------------------------------
 
@@ -387,9 +392,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         uint256 tokenId,
         uint256 price,
         uint256 expiry
-    ) public payable {
-        //FIXME: Can probably remove this. Trivial workaround having a second wallet.
-        // require(msg.sender != IERC721(ca).ownerOf(tokenId), "Can not bid on your own NFT.");
+    ) public {
         if (price > SMOL_MAX_INT || expiry > SMOL_MAX_INT)
             revert BEANIntegerOverFlow();
         if (tradingPaused)
@@ -406,9 +409,11 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         if (expiry != 0 && expiry < block.timestamp)
             revert BEANBadExpiry();
 
+        // Calculate and store new offer.
         bytes32 offerHash = computeOrderHash(msg.sender, ca, tokenId, userNonces[msg.sender]);
         unchecked {++userNonces[msg.sender];}
         _storeOffer(offerHash, ca, msg.sender, tokenId, price, expiry, false);
+
         emit OfferPlaced(ca, tokenId, price, expiry, msg.sender, offerHash, IERC721(ca).ownerOf(tokenId));
     }
 
@@ -433,6 +438,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         totalEscrowedAmount += price;
         totalInEscrow[msg.sender] += price;
 
+        // Calculate and store new offer.
         bytes32 offerHash = computeOrderHash(msg.sender, ca, tokenId, userNonces[msg.sender]);
         unchecked {++userNonces[msg.sender];}
         _storeOffer(offerHash, ca, msg.sender, tokenId, price, expiry, true);
