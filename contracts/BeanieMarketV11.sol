@@ -6,7 +6,6 @@ pragma solidity ^0.8.4;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
-import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import "@openzeppelin/contracts/interfaces/IERC2981.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "./BeanUtils.sol";
@@ -172,17 +171,12 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         approveSelf();
     }
 
-    // // Required in order to receive ERC 721s.
-    // function onERC721Received(
-    //     address,
-    //     address,
-    //     uint256,
-    //     bytes memory
-    // ) public virtual override returns (bytes4) {
-    //     return this.onERC721Received.selector;
-    // }
+    //---------------------------------
+    //
+    //            LISTINGS
+    //
+    //---------------------------------
 
-    // LISTINGS
     // Lists a token at the specified price point.
     function listToken(
         address ca,
@@ -347,7 +341,12 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         delete posInListings[listingId];
     }
 
-    // OFFERS
+    //---------------------------------
+    //
+    //            ORDERS
+    //
+    //---------------------------------
+
     // Make a standard offer (checks balance of bidder, but does not escrow).
     function makeOffer(
         address ca,
@@ -405,45 +404,6 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         _storeOffer(offerHash, ca, msg.sender, tokenId, price, expiry, true);
 
         emit OfferPlaced(ca, tokenId, price, expiry, msg.sender, offerHash, IERC721(ca).ownerOf(tokenId));
-    }
-
-    function computeOrderHash(
-        address user,
-        address token,
-        uint256 tokenId,
-        uint256 userNonce
-    ) public view returns (bytes32 offerHash) {
-        return keccak256(
-            abi.encode(
-                user,
-                token,
-                tokenId,
-                userNonce,
-                block.timestamp
-            )
-        );
-    }
-
-    function _storeOffer(
-        bytes32 offerHash,
-        address ca,
-        address user,
-        uint256 tokenId,
-        uint256 price,
-        uint256 expiry,
-        bool escrowed
-    ) private {
-        //FIXME: futz around with this to see if we can shave off some gas later.
-        offers[offerHash] = Offer(
-            tokenId,
-            uint128(price),
-            uint128(expiry),
-            ca,
-            user,
-            escrowed
-        );
-        posInOffers[offerHash] = OfferPos(offerHashesByBuyer[user].length);
-        offerHashesByBuyer[user].push(offerHash);
     }
 
     // Cancel an offer (escrowed or not).
@@ -522,6 +482,36 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         emit TokenPurchased(oldOwner, newOwner, offer.price, offer.contractAddress, offer.tokenId, offerHash, block.timestamp);
     }
 
+    function computeOrderHash(
+        address user,
+        address token,
+        uint256 tokenId,
+        uint256 userNonce
+    ) public view returns (bytes32 offerHash) {
+        return keccak256(abi.encode(user, token, tokenId, userNonce, block.timestamp));
+    }
+
+    function _storeOffer(
+        bytes32 offerHash,
+        address ca,
+        address user,
+        uint256 tokenId,
+        uint256 price,
+        uint256 expiry,
+        bool escrowed
+    ) private {
+        offers[offerHash] = Offer(
+            tokenId,
+            uint128(price),
+            uint128(expiry),
+            ca,
+            user,
+            escrowed
+        );
+        posInOffers[offerHash] = OfferPos(offerHashesByBuyer[user].length);
+        offerHashesByBuyer[user].push(offerHash);
+    }
+
     function _updateOfferPos(bytes32 offerId, address offerer) internal {
         OfferPos memory offerPos_ = posInOffers[offerId];
         bytes32 offerHashToReplace;
@@ -536,8 +526,15 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         delete posInOffers[offerId];
     }
 
-    // PUBLIC ESCROW FUNCTIONS
+    //---------------------------------
+    //
+    //            ESCROW
+    //
+    //---------------------------------
+
     function addFundsToEscrow() external payable nonReentrant {
+        if (!usersCanWithdrawEscrow)
+            revert BEANWithdrawNotEnabled();
         totalEscrowedAmount += msg.value;
         totalInEscrow[msg.sender] += msg.value;
     }
@@ -562,9 +559,14 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         _sendEth(depositor, escrowAmount);
     }
 
-    //-------------------FEE PROCESSING-------------------
+    //---------------------------------
+    //
+    //         FEE PROCESSING
+    //
+    //---------------------------------
+    
     /**
-        @dev functions for accruing and processing ETH fees.
+    *   @dev functions for accruing and processing ETH fees.
     */
 
     // Process accrued ETH fees.
@@ -642,7 +644,11 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
             IERC20(TOKEN).transferFrom(from, beanBuybackAddress, beanBuybackAmount);
     }
 
-    // OTHER PUBLIC FUNCTIONS
+    //---------------------------------
+    //
+    //     VARIOUS PUBLIC GETTERS
+    //
+    //---------------------------------
     function getCollectionOwner(address ca) external view returns (address) {
         return collectionOwners[ca];
     }
