@@ -201,7 +201,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         bytes32 oldListingHash = currentListingOrderHash[ca][tokenId];
         if (oldListingHash != bytes32(0)) {
             Listing memory listing = listings[oldListingHash];
-            updateListingPos(oldListingHash, listing.lister, listing.contractAddress);
+            _updateListingPos(oldListingHash, listing.lister, listing.contractAddress);
             delete listings[oldListingHash];
         }
 
@@ -249,9 +249,9 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         )
             revert BEANDelistNotApproved();
 
-        updateListingPos(listingId, tknOwner, listing.contractAddress);
-        delete currentListingOrderHash[listing.contractAddress][listing.tokenId];
+        _updateListingPos(listingId, tknOwner, listing.contractAddress);
         delete listings[listingId];
+        delete currentListingOrderHash[listing.contractAddress][listing.tokenId];
 
         emit TokenDelisted(
             listing.contractAddress,
@@ -285,7 +285,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
             revert BEANListingNotActive();
 
         //effects - remove listing
-        updateListingPos(listingId, oldOwner, listing.contractAddress);
+        _updateListingPos(listingId, oldOwner, listing.contractAddress);
         delete listings[listingId];
 
         //Interaction - transfer NFT and process fees
@@ -300,7 +300,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
                 uint256 beanBuybackFeeAmount,
                 uint256 collectionOwnerFeeAmount,
                 uint256 saleNetFees
-            ) = calculateAmounts(listing.contractAddress, listing.price);
+            ) = _calculateAmounts(listing.contractAddress, listing.price);
             _sendEth(oldOwner, saleNetFees);
             _sendEth( collectionOwners[listing.contractAddress], collectionOwnerFeeAmount);
             if (autoSendFees) {
@@ -323,22 +323,31 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         );
     }
 
+    /**
+    * @dev This function requires that listingsByLister[address] and listingsByContract[address] must have
+    * a length of at least one. This should always be true, as when listToken() is called it pushes an entry
+    * to both arrays. No other functions delete from or manage the ordering of arrays, so for a non-zero
+    * listingId, listingsByLister[address] and listingsByContract[address] will ALWAYS have an entry.
+    * 
+    * @dev Calls into this function should ALWAYS be accompanied by a delete listings[listingHash].
+    */
+
     // Called when an existing active listing needs to be removed or replaced.
-    function updateListingPos(bytes32 listingId, address tknOwner, address listingAddress) internal {
+    function _updateListingPos(bytes32 listingId, address oldOwner, address listingAddress) internal {
         //Get the position of this listing in both listing arrays (user/collection)
         ListingPos memory listingPos_ = posInListings[listingId];
         bytes32 listingHashToReplace;
 
         // 1. Handle updating the array that tracks all of a user's listings.
-        uint256 lastListerIndex = listingsByLister[tknOwner].length-1;
+        uint256 lastListerIndex = listingsByLister[oldOwner].length-1;
 
         // Get the last listing hash in the array
-        listingHashToReplace = listingsByLister[tknOwner][lastListerIndex];
+        listingHashToReplace = listingsByLister[oldOwner][lastListerIndex];
         // Move the last listing hash to the replacement position, and shorten the array.
-        listingsByLister[tknOwner].swapPop(listingPos_.posInListingsByLister);
+        listingsByLister[oldOwner].swapPop(listingPos_.posInListingsByLister);
 
         // If we have something still in the array, need to update posInListings.
-        if (listingsByLister[tknOwner].length > 0) {
+        if (listingsByLister[oldOwner].length > 0) {
             posInListings[listingHashToReplace].posInListingsByLister = listingPos_.posInListingsByLister;
         }
 
@@ -493,9 +502,9 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         address payable oldOwner = payable(address(msg.sender));
         address payable newOwner = payable(address(offer.offerer));
         if (offer.escrowed) {
-            escrowedPurchase(_nft, offer.contractAddress, offer.tokenId, offer.price, oldOwner, newOwner);
+            _escrowedPurchase(_nft, offer.contractAddress, offer.tokenId, offer.price, oldOwner, newOwner);
         } else {
-            tokenPurchase(_nft, offer.contractAddress, offer.tokenId, offer.price, oldOwner, newOwner);
+            _tokenPurchase(_nft, offer.contractAddress, offer.tokenId, offer.price, oldOwner, newOwner);
         }
         emit TokenPurchased(oldOwner, newOwner, offer.price, offer.contractAddress, offer.tokenId, offerHash, block.timestamp);
     }
@@ -734,7 +743,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
     //TODO: Test
     function clearListing(bytes32 listingId) external onlyAdmins {
         Listing memory listing = listings[listingId];
-        updateListingPos(listingId, listing.lister, listing.contractAddress);
+        _updateListingPos(listingId, listing.lister, listing.contractAddress);
         delete listings[listingId];
     }
 
@@ -845,7 +854,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
     }
 
     // PRIVATE HELPERS
-    function calculateAmounts(address ca, uint256 amount)
+    function _calculateAmounts(address ca, uint256 amount)
         private
         view
         returns (uint256, uint256, uint256, uint256, uint256)
@@ -872,7 +881,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         );
     }
 
-    function escrowedPurchase(
+    function _escrowedPurchase(
         IERC721 _nft,
         address ca,
         uint256 tokenId,
@@ -900,7 +909,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
                 uint256 beanBuybackFeeAmount,
                 uint256 collectionOwnerFeeAmount,
                 uint256 remainder
-            ) = calculateAmounts(ca, price);
+            ) = _calculateAmounts(ca, price);
             _sendEth(oldOwner, remainder);
             _sendEth(collectionOwners[ca], collectionOwnerFeeAmount);
             if (autoSendFees) {
@@ -913,7 +922,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         }
     }
 
-    function tokenPurchase(
+    function _tokenPurchase(
         IERC721 _nft,
         address ca,
         uint256 tokenId,
@@ -931,7 +940,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
                 uint256 beanBuybackFeeAmount,
                 uint256 collectionOwnerFeeAmount,
                 uint256 priceNetFees
-            ) = calculateAmounts(ca, price);
+            ) = _calculateAmounts(ca, price);
             _token.transferFrom(newOwner, oldOwner, priceNetFees);
             _token.transferFrom(newOwner, collectionOwners[ca], collectionOwnerFeeAmount);
             if (autoSendFees) {
