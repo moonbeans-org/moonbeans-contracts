@@ -202,8 +202,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         bytes32 oldListingHash = currentListingOrderHash[ca][tokenId];
         if (oldListingHash != bytes32(0)) {
             Listing memory listing = listings[oldListingHash];
-            _updateListingPos(oldListingHash, listing.lister, listing.contractAddress);
-            delete listings[oldListingHash];
+            _updateListingPos(oldListingHash, listing.lister, listing.contractAddress, listing.tokenId);
         }
 
         // Store the new listing.
@@ -255,9 +254,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
             revert BEANDelistNotApproved();                    // you can't delist, ser
 
         // Clean up old listing from all lister array, collection array, all listings, and current listings.
-        _updateListingPos(listingId, tknOwner, listing.contractAddress);
-        delete listings[listingId];
-        delete currentListingOrderHash[listing.contractAddress][listing.tokenId];
+        _updateListingPos(listingId, tknOwner, listing.contractAddress, listing.tokenId);
 
         // Index moi
         emit TokenDelisted(
@@ -293,9 +290,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
 
         // Effects - cleanup listing data structures
         // TODO: Validate all 4 listing data structures, post fufill.
-        _updateListingPos(listingId, originalLister, listing.contractAddress);
-        delete listings[listingId];
-        delete currentListingOrderHash[listing.contractAddress][listing.tokenId];
+        _updateListingPos(listingId, originalLister, listing.contractAddress, listing.tokenId);
 
         // Interaction - transfer NFT and process fees. Will fail if token no longer approved.
         token.safeTransferFrom(originalLister, to, listing.tokenId);
@@ -345,7 +340,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
     */
 
     // Called when an existing active listing needs to be removed or replaced.
-    function _updateListingPos(bytes32 listingId, address oldOwner, address listingAddress) internal {
+    function _updateListingPos(bytes32 listingId, address oldOwner, address listingAddress, uint256 listingTokenId) internal {
         //Get the position of this listing in both listing arrays (user/collection)
         ListingPos memory listingPos_ = posInListings[listingId];
         bytes32 listingHashToReplace;
@@ -377,7 +372,10 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         }
 
         // 3. Finally, delete the listing hash that we no longer care about.
+        delete listings[listingId];
+        delete currentListingOrderHash[listingAddress][listingTokenId];
         delete posInListings[listingId];
+        
     }
 
     //---------------------------------
@@ -462,7 +460,6 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
             revert BEANNoCancellableOffer();
 
         // Remove the offer
-        delete offers[offerHash];
         _updateOfferPos(offerHash, offer.offerer);
 
         // Handle returning escrowed funds
@@ -481,7 +478,6 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         if (offer.price == 0) 
             revert BEANNoCancellableOffer();
         // Remove the offer
-        delete offers[offerHash];
         _updateOfferPos(offerHash, offer.offerer);
         // Handle returning escrowed funds
         if (offer.escrowed && returnEscrow) {
@@ -508,7 +504,6 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         if(msg.sender != _nft.ownerOf(offer.tokenId))
             revert BEANCallerNotOwner();
 
-        delete offers[offerHash];
         _updateOfferPos(offerHash, offer.offerer);
 
         // Actually perform trade
@@ -563,6 +558,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         if (offerHashesByBuyer[offerer].length > 0) {
             posInOffers[offerHashToReplace].posInOffersByOfferer = offerPos_.posInOffersByOfferer;
         }
+        delete offers[offerId];
         delete posInOffers[offerId];
     }
 
@@ -756,8 +752,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
     //TODO: Test
     function clearListing(bytes32 listingId) external onlyAdmins {
         Listing memory listing = listings[listingId];
-        _updateListingPos(listingId, listing.lister, listing.contractAddress);
-        delete listings[listingId];
+        _updateListingPos(listingId, listing.lister, listing.contractAddress, listing.tokenId);
     }
 
     // Convenience function for listing / Partially implements EIP2981
