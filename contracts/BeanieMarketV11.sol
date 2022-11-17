@@ -288,7 +288,6 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
             revert BEANListingNotActive();
 
         // Effects - cleanup listing data structures
-        // TODO: Validate all 4 listing data structures, post fufill.
         _cleanupListing(listingId, originalLister, listing.contractAddress, listing.tokenId);
 
         // Interaction - transfer NFT and process fees. Will fail if token no longer approved.
