@@ -152,6 +152,33 @@ describe("Market Listings", function () {
     });
   });
 
+  describe("Admin clear listing", function () {
+    it("Admin can clear listing", async function () {
+        const { beanieMarket, dummyNFT, owner, addrs, now } = await loadFixture(deployMarketAndListNFTsFixture);
+        const listingIds = await beanieMarket.getListingsByContract(dummyNFT.address);
+        const listingToClear = listingIds[0];
+
+        await beanieMarket.connect(owner).clearListing(listingToClear);
+
+        let listingsByLister0 = await beanieMarket.getListingsByLister(addrs[0].address);
+        let listingsByLister1 = await beanieMarket.getListingsByLister(addrs[1].address);
+        let listingsByContract = await beanieMarket.getListingsByContract(dummyNFT.address);
+        expect(listingsByLister0).to.not.contain(listingToClear)
+        expect(listingsByContract).to.not.contain(listingToClear)
+        expect(listingsByLister1).to.not.contain(listingToClear)
+    });
+
+    it("Revert clearListing call if caller not admin", async function () {
+        const { beanieMarket, dummyNFT, owner, addrs, now } = await loadFixture(deployMarketAndListNFTsFixture);
+        const listingIds = await beanieMarket.getListingsByContract(dummyNFT.address);
+        const listingToClear = listingIds[0];
+
+        await expect(beanieMarket.connect(addrs[0]).clearListing(listingToClear)).to.be.revertedWithCustomError(
+            beanieMarket, "BEANNotOwnerOrAdmin"
+        );
+    });
+  });
+
   describe("fulfill listings", function () {
     it("Fulfill listing ownership change", async function () {
       const { beanieMarket, dummyNFT, owner, addrs, now } = await loadFixture(deployMarketAndListNFTsFixture);
@@ -416,6 +443,44 @@ describe("Market Listings", function () {
       expect(await beanieMarket.posInListings(listingToDelist)).to.eql([BIG_ZERO, BIG_ZERO]);
     });
 
+    it("Delist token updates storage structures", async function () {
+        const { beanieMarket, dummyNFT, owner, addrs } = await loadFixture(deployMarketAndListNFTsFixture);
+        const address0 = addrs[0];
+        const listingIds = await beanieMarket.getListingsByContract(dummyNFT.address);
+        const listingToDelist = listingIds[0];
+        const listingData = await beanieMarket.listings(listingToDelist);
+
+        let listingsByLister0 = await beanieMarket.getListingsByLister(addrs[0].address);
+        let listingsByLister1 = await beanieMarket.getListingsByLister(addrs[1].address);
+        let listingsByContract = await beanieMarket.getListingsByContract(dummyNFT.address);
+        expect(listingsByLister0.length).to.equal(4)
+        expect(listingsByLister1.length).to.equal(1)
+        expect(listingsByContract.length).to.equal(5)
+        expect(await beanieMarket.currentListingOrderHash(listingData.contractAddress, listingData.tokenId))
+            .to.equal(listingToDelist);
+        await beanieMarket.connect(address0).delistToken(listingToDelist);
+  
+        //Check to see if new listingsByLister and listingsByContract is correct
+        //Listings
+        expect(await beanieMarket.listings(listingToDelist)).to.eql([BIG_ZERO, BIG_ZERO, BIG_ZERO, ADDR_ZERO, ADDR_ZERO]);
+        //posInListings
+        expect(await beanieMarket.posInListings(listingToDelist)).to.eql([BIG_ZERO, BIG_ZERO]);
+        //listingsByLister
+        listingsByLister0 = await beanieMarket.getListingsByLister(addrs[0].address);
+        listingsByLister1 = await beanieMarket.getListingsByLister(addrs[1].address);
+        expect(listingsByLister0.length).to.equal(3)
+        expect(listingsByLister1.length).to.equal(1)
+        expect(listingsByLister0).to.not.contain(listingToDelist)
+        expect(listingsByLister1).to.not.contain(listingToDelist)
+        //listingsBycontract
+        listingsByContract = await beanieMarket.getListingsByContract(dummyNFT.address);
+        expect(listingsByContract).to.not.contain(listingToDelist)
+        expect(listingsByContract.length).to.equal(4)
+        //currentListingOrderHash
+        expect(await beanieMarket.currentListingOrderHash(listingData.contractAddress, listingData.tokenId))
+            .to.equal(ethers.utils.hexZeroPad(0x0, 32));
+      });
+
     it("Creating a new listing for same token removes old listing.", async function () {
       const { beanieMarket, dummyNFT, owner, addrs, now } = await loadFixture(deployMarketAndListNFTsFixture);
       const listingIds = await beanieMarket.getListingsByContract(dummyNFT.address);
@@ -519,7 +584,7 @@ describe("Market Listings", function () {
       await beanieMarket.connect(owner).delistToken(listing0hash);
     });
 
-    it("Can delist unowned token if lister is no longer token owner.", async function () {
+    it("Anyone can delist token if lister is no longer token owner.", async function () {
       const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndListNFTsFixture);
 
       const listings = await beanieMarket.getListingsByContract(dummyNFT.address);
@@ -533,7 +598,21 @@ describe("Market Listings", function () {
       await beanieMarket.connect(addrs[2]).delistToken(listing0hash);
     });
 
-    it("Can delist unowned token if expiry has passed.", async function () {
+    it("Anyone can delist token if token is contract is no longer approved for all.", async function () {
+        const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndListNFTsFixture);
+  
+        const listings = await beanieMarket.getListingsByContract(dummyNFT.address);
+        const listing0hash = listings[0];
+        const listing0Data = await beanieMarket.listings(listing0hash);
+  
+        await expect(beanieMarket.connect(addrs[2]).delistToken(listing0hash)
+          ).to.be.revertedWithCustomError(beanieMarket, "BEANDelistNotApproved");
+  
+        await dummyNFT.connect(addrs[0]).setApprovalForAll(beanieMarket.address, false);
+        await beanieMarket.connect(addrs[2]).delistToken(listing0hash);
+      });
+
+    it("Anyone can delist token if expiry has passed.", async function () {
       const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndListNFTsFixture);
 
       const listings = await beanieMarket.getListingsByContract(dummyNFT.address);

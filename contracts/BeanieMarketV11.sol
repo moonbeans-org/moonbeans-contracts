@@ -202,7 +202,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         bytes32 oldListingHash = currentListingOrderHash[ca][tokenId];
         if (oldListingHash != bytes32(0)) {
             Listing memory listing = listings[oldListingHash];
-            _updateListingPos(oldListingHash, listing.lister, listing.contractAddress, listing.tokenId);
+            _cleanupListing(oldListingHash, listing.lister, listing.contractAddress, listing.tokenId);
         }
 
         // Store the new listing.
@@ -242,8 +242,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         IERC721 token = IERC721(listing.contractAddress);
         address tknOwner = token.ownerOf(listing.tokenId);
 
-        // If listing is invalid due to expiry or transfer, (or caller has admin perms), anyone can delist. 
-        // TODO: Add test for the isApprovedForAll check.
+        // If listing is invalid due to expiry, transfer, or approval revoke, (or caller has admin perms), anyone can delist. 
         if (
             msg.sender != tknOwner &&                          // If not owner
             !administrators[msg.sender] &&                     // and not admin
@@ -254,7 +253,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
             revert BEANDelistNotApproved();                    // you can't delist, ser
 
         // Clean up old listing from all lister array, collection array, all listings, and current listings.
-        _updateListingPos(listingId, tknOwner, listing.contractAddress, listing.tokenId);
+        _cleanupListing(listingId, tknOwner, listing.contractAddress, listing.tokenId);
 
         // Index moi
         emit TokenDelisted(
@@ -290,7 +289,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
 
         // Effects - cleanup listing data structures
         // TODO: Validate all 4 listing data structures, post fufill.
-        _updateListingPos(listingId, originalLister, listing.contractAddress, listing.tokenId);
+        _cleanupListing(listingId, originalLister, listing.contractAddress, listing.tokenId);
 
         // Interaction - transfer NFT and process fees. Will fail if token no longer approved.
         token.safeTransferFrom(originalLister, to, listing.tokenId);
@@ -335,12 +334,11 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
     * listingId, listingsByLister[address] and listingsByContract[address] will ALWAYS have an entry.
     * 
     * @dev Calls into this function should ALWAYS be accompanied by a delete listings[listingHash],
-    * and potentially the matching entry in currentListingOrderHash. TODO: rename to `cleanupListing`? and
-    * merge the `delete` calls into this function.
+    * and potentially the matching entry in currentListingOrderHash.
     */
 
     // Called when an existing active listing needs to be removed or replaced.
-    function _updateListingPos(bytes32 listingId, address oldOwner, address listingAddress, uint256 listingTokenId) internal {
+    function _cleanupListing(bytes32 listingId, address oldOwner, address listingAddress, uint256 listingTokenId) internal {
         //Get the position of this listing in both listing arrays (user/collection)
         ListingPos memory listingPos_ = posInListings[listingId];
         bytes32 listingHashToReplace;
@@ -460,7 +458,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
             revert BEANNoCancellableOffer();
 
         // Remove the offer
-        _updateOfferPos(offerHash, offer.offerer);
+        _cleanupOffer(offerHash, offer.offerer);
 
         // Handle returning escrowed funds
         if (offer.escrowed) {
@@ -478,7 +476,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         if (offer.price == 0) 
             revert BEANNoCancellableOffer();
         // Remove the offer
-        _updateOfferPos(offerHash, offer.offerer);
+        _cleanupOffer(offerHash, offer.offerer);
         // Handle returning escrowed funds
         if (offer.escrowed && returnEscrow) {
             if (offer.price > totalInEscrow[offer.offerer])
@@ -504,7 +502,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         if(msg.sender != _nft.ownerOf(offer.tokenId))
             revert BEANCallerNotOwner();
 
-        _updateOfferPos(offerHash, offer.offerer);
+        _cleanupOffer(offerHash, offer.offerer);
 
         // Actually perform trade
         address payable oldOwner = payable(address(msg.sender));
@@ -547,7 +545,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         offerHashesByBuyer[user].push(offerHash);
     }
 
-    function _updateOfferPos(bytes32 offerId, address offerer) internal {
+    function _cleanupOffer(bytes32 offerId, address offerer) internal {
         OfferPos memory offerPos_ = posInOffers[offerId];
         bytes32 offerHashToReplace;
         //Cleanup accessory mappings. We pass the mapping results directly to the swapPop function to save memory height.
@@ -749,10 +747,9 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         tradingPaused = value;
     }
 
-    //TODO: Test
     function clearListing(bytes32 listingId) external onlyAdmins {
         Listing memory listing = listings[listingId];
-        _updateListingPos(listingId, listing.lister, listing.contractAddress, listing.tokenId);
+        _cleanupListing(listingId, listing.lister, listing.contractAddress, listing.tokenId);
     }
 
     // Convenience function for listing / Partially implements EIP2981

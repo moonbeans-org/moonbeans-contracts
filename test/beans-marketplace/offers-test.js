@@ -6,7 +6,7 @@ const ONE_ETH = ethers.utils.parseEther("1.0");
 const BIG_ZERO = ethers.constants.Zero;
 const ADDR_ZERO = ethers.constants.AddressZero;
 
-describe("Beanie Market", function () {
+describe("Market Offers", function () {
   async function deployMarketAndNFTFixture() {
     const [owner, ...addrs] = await ethers.getSigners();
     const admin = addrs[9];
