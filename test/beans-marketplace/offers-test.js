@@ -84,13 +84,13 @@ describe("Market Offers", function () {
     it("Cannot make offer with zero price", async function () {
       const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndNFTFixture);
       await expect(beanieMarket.connect(addrs[0]).makeOffer(dummyNFT.address, 4, 0, now)
-        ).to.be.revertedWithCustomError(beanieMarket, "BEANZeroPrice");
+        ).to.be.revertedWithCustomError(beanieMarket, "BEAN_ZeroPrice");
     });
 
     it("Cannot make offer if contract is not approved", async function () {
       const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndNFTFixture);
       await expect(beanieMarket.connect(addrs[0]).makeOffer(dummyNFT.address, 4, ONE_ETH, now)
-        ).to.be.revertedWithCustomError(beanieMarket, "BEANContractNotApproved");
+        ).to.be.revertedWithCustomError(beanieMarket, "BEAN_ContractNotApproved");
     });
 
     it("Cannot make offer if account does not own enough paymentToken", async function () {
@@ -99,7 +99,7 @@ describe("Market Offers", function () {
       await paymentToken.connect(addrs[11]).approve(beanieMarket.address, ethers.constants.MaxUint256);
 
       await expect(beanieMarket.connect(addrs[11]).makeOffer(dummyNFT.address, 4, ONE_ETH, now)
-        ).to.be.revertedWithCustomError(beanieMarket, "BEANUserTokensLow");
+        ).to.be.revertedWithCustomError(beanieMarket, "BEAN_UserTokensLow");
     });
 
     it("Cannot make offer with expiry before now", async function () {
@@ -108,9 +108,9 @@ describe("Market Offers", function () {
       await paymentToken.connect(addrs[0]).approve(beanieMarket.address, ethers.constants.MaxUint256);
 
       await expect(beanieMarket.connect(addrs[0]).makeOffer(dummyNFT.address, 4, ONE_ETH, now-1)
-        ).to.be.revertedWithCustomError(beanieMarket, "BEANBadExpiry");
+        ).to.be.revertedWithCustomError(beanieMarket, "BEAN_BadExpiry");
       await expect(beanieMarket.connect(addrs[0]).makeOffer(dummyNFT.address, 4, ONE_ETH, now)
-        ).to.be.revertedWithCustomError(beanieMarket, "BEANBadExpiry");
+        ).to.be.revertedWithCustomError(beanieMarket, "BEAN_BadExpiry");
     });
   });
 
@@ -456,7 +456,7 @@ describe("Market Offers", function () {
     it("Cannot accept non-existent offer", async function () {
       const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeOffersFixture);
       await expect(beanieMarket.connect(addrs[2]).acceptOffer(ethers.utils.hexZeroPad(0x2, 32))
-        ).to.be.revertedWithCustomError(beanieMarket, "BEANCollectionNotEnabled");
+        ).to.be.revertedWithCustomError(beanieMarket, "BEAN_CollectionNotEnabled");
     });
 
     it("Cannot accept offer past expiry", async function () {
@@ -472,7 +472,7 @@ describe("Market Offers", function () {
 
       await dummyNFT.connect(addrs[0]).setApprovalForAll(beanieMarket.address, true);
       await expect(beanieMarket.connect(addrs[2]).acceptOffer(offer0Hash)
-        ).to.be.revertedWithCustomError(beanieMarket, "BEANOrderExpired");
+        ).to.be.revertedWithCustomError(beanieMarket, "BEAN_OrderExpired");
     });
 
     it("Cannot accept offer if not current token owner", async function () {
@@ -485,7 +485,7 @@ describe("Market Offers", function () {
 
       await dummyNFT.connect(addrs[0]).setApprovalForAll(beanieMarket.address, true);
       await expect(beanieMarket.connect(addrs[5]).acceptOffer(offer0Hash)
-        ).to.be.revertedWithCustomError(beanieMarket, "BEANCallerNotOwner");
+        ).to.be.revertedWithCustomError(beanieMarket, "BEAN_CallerNotOwner");
     });
 
   });
@@ -553,7 +553,7 @@ describe("Market Offers", function () {
       const expiry = offer0Data.expiry
 
       await expect(beanieMarket.connect(addrs[5]).cancelOffer(offerHash)
-        ).to.be.revertedWithCustomError(beanieMarket, "BEANNotAuthorized");
+        ).to.be.revertedWithCustomError(beanieMarket, "BEAN_NotAuthorized");
 
       await network.provider.send("evm_setNextBlockTimestamp", [Number(expiry) + 10])
       await network.provider.send("evm_mine")
@@ -580,7 +580,7 @@ describe("Market Offers", function () {
       const expiry = offer0Data.expiry
 
       await expect(beanieMarket.connect(addrs[5]).cancelOffer(offerHash)
-        ).to.be.revertedWithCustomError(beanieMarket, "BEANNotAuthorized");
+        ).to.be.revertedWithCustomError(beanieMarket, "BEAN_NotAuthorized");
     });
   });
 });

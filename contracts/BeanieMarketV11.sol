@@ -12,36 +12,36 @@ import "./BeanUtils.sol";
 
 import "hardhat/console.sol";
 
-error BEANDelistNotApproved();
-error BEANNotAuthorized();
-error BEANListingNotActive();
-error BEANTradingPaused();
-error BEANNotOwnerOrAdmin();
-error BEANNoSelfOffer();
-error BEANCollectionNotEnabled();
-error BEANIntegerOverFlow();
+error BEAN_DelistNotApproved();
+error BEAN_NotAuthorized();
+error BEAN_ListingNotActive();
+error BEAN_TradingPaused();
+error BEAN_NotOwnerOrAdmin();
+error BEAN_NoSelfOffer();
+error BEAN_CollectionNotEnabled();
+error BEAN_IntegerOverFlow();
 
 //General
-error BEANZeroPrice();
-error BEANBadPrice();
+error BEAN_ZeroPrice();
+error BEAN_BadPrice();
 
 //Offers or Listings
-error BEANContractNotApproved();
-error BEANUserTokensLow();
-error BEANOfferArrayPosMismatch();
-error BEANNoCancellableOffer();
-error BEANCallerNotOwner();
-error BEANNotEnoughInEscrow();
-error BEANOrderExpired();
-error BEANBadExpiry();
-error BEANNoOfferFound();
-error BEANTokenNotListed();
-error BEANNotEnoughEthSent();
+error BEAN_ContractNotApproved();
+error BEAN_UserTokensLow();
+error BEAN_OfferArrayPosMismatch();
+error BEAN_NoCancellableOffer();
+error BEAN_CallerNotOwner();
+error BEAN_NotEnoughInEscrow();
+error BEAN_OrderExpired();
+error BEAN_BadExpiry();
+error BEAN_NoOfferFound();
+error BEAN_TokenNotListed();
+error BEAN_NotEnoughEthSent();
 
 //Escrow
-error BEANWithdrawNotEnabled();
-error BEANEscrowOverWithdraw();
-error BEANZeroInEscrow();
+error BEAN_WithdrawNotEnabled();
+error BEAN_EscrowOverWithdraw();
+error BEAN_ZeroInEscrow();
 
 contract BeanieMarketV11 is ReentrancyGuard, Ownable {
     using BeanUtils for bytes32[];
@@ -161,7 +161,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
 
     modifier onlyAdmins() {
         if (!(administrators[_msgSender()] || owner() == _msgSender()))
-            revert BEANNotOwnerOrAdmin();
+            revert BEAN_NotOwnerOrAdmin();
         _;
     }
 
@@ -186,13 +186,13 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
     ) public {
         IERC721 token = IERC721(ca);
         if (price > SMOL_MAX_INT || expiry > SMOL_MAX_INT)
-            revert BEANIntegerOverFlow();
+            revert BEAN_IntegerOverFlow();
         if (msg.sender != token.ownerOf(tokenId))
-            revert BEANCallerNotOwner();
+            revert BEAN_CallerNotOwner();
         if (!token.isApprovedForAll(msg.sender, address(this)))
-            revert BEANContractNotApproved();
+            revert BEAN_ContractNotApproved();
         if (expiry != 0 && expiry < block.timestamp)
-            revert BEANBadExpiry();
+            revert BEAN_BadExpiry();
 
         // Generate unique listing hash, increment nonce.
         bytes32 listingHash = computeOrderHash(msg.sender, ca, tokenId, userNonces[msg.sender]);
@@ -250,7 +250,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
             token.isApprovedForAll(tknOwner, address(this)) && // and token is approved for trade
             listing.expiry > block.timestamp                   // and listing is not expired
         )
-            revert BEANDelistNotApproved();                    // you can't delist, ser
+            revert BEAN_DelistNotApproved();                    // you can't delist, ser
 
         // Clean up old listing from all lister array, collection array, all listings, and current listings.
         _cleanupListing(listingId, tknOwner, listing.contractAddress, listing.tokenId);
@@ -267,25 +267,25 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
     // Allows a buyer to buy at the listed price - sending the purchased token to `to`.
     function fulfillListing(bytes32 listingId, address to) external payable nonReentrant {
         if (tradingPaused) 
-            revert BEANTradingPaused();
+            revert BEAN_TradingPaused();
         
         Listing memory listing = listings[listingId];
         
         if (!collectionTradingEnabled[listing.contractAddress])
-            revert BEANCollectionNotEnabled();
+            revert BEAN_CollectionNotEnabled();
         if (listing.price == 0)
-            revert BEANTokenNotListed();
+            revert BEAN_TokenNotListed();
         if (msg.value < listing.price)
-            revert BEANNotEnoughEthSent();
+            revert BEAN_NotEnoughEthSent();
         if (listing.expiry != 0 && block.timestamp > listing.expiry)
-            revert BEANOrderExpired();
+            revert BEAN_OrderExpired();
 
         // Verify that the listing is still valid (current owner is original lister)
         address originalLister = listing.lister;
         IERC721 token = IERC721(listing.contractAddress);
 
         if(originalLister != token.ownerOf(listing.tokenId)) 
-            revert BEANListingNotActive();
+            revert BEAN_ListingNotActive();
 
         // Effects - cleanup listing data structures
         _cleanupListing(listingId, originalLister, listing.contractAddress, listing.tokenId);
@@ -389,20 +389,20 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         uint256 expiry
     ) public {
         if (price > SMOL_MAX_INT || expiry > SMOL_MAX_INT)
-            revert BEANIntegerOverFlow();
+            revert BEAN_IntegerOverFlow();
         if (tradingPaused)
-            revert BEANTradingPaused();
+            revert BEAN_TradingPaused();
         if (price == 0)
-            revert BEANZeroPrice();
+            revert BEAN_ZeroPrice();
 
         IERC20 token = IERC20(TOKEN);
 
         if (token.allowance(msg.sender, address(this)) < price)
-            revert BEANContractNotApproved();
+            revert BEAN_ContractNotApproved();
         if (token.balanceOf(msg.sender) < price)
-            revert BEANUserTokensLow();
+            revert BEAN_UserTokensLow();
         if (expiry != 0 && expiry < block.timestamp)
-            revert BEANBadExpiry();
+            revert BEAN_BadExpiry();
 
         // Calculate and store new offer.
         bytes32 offerHash = computeOrderHash(msg.sender, ca, tokenId, userNonces[msg.sender]);
@@ -419,16 +419,16 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         uint256 expiry
     ) public payable nonReentrant {
         if (msg.value > SMOL_MAX_INT || expiry > SMOL_MAX_INT)
-            revert BEANIntegerOverFlow();
+            revert BEAN_IntegerOverFlow();
         if (tradingPaused)
-            revert BEANTradingPaused();
+            revert BEAN_TradingPaused();
         
         uint256 price = msg.value;
 
         if (price == 0) 
-            revert BEANZeroPrice();
+            revert BEAN_ZeroPrice();
         if (expiry != 0 && expiry < block.timestamp)
-            revert BEANBadExpiry();
+            revert BEAN_BadExpiry();
 
         totalEscrowedAmount += price;
         totalInEscrow[msg.sender] += price;
@@ -452,9 +452,9 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
             !administrators[msg.sender] && 
             offer.expiry > block.timestamp &&
             IERC721(offer.contractAddress).ownerOf(offer.tokenId) != msg.sender
-        ) revert BEANNotAuthorized();
+        ) revert BEAN_NotAuthorized();
         if (offer.price == 0) 
-            revert BEANNoCancellableOffer();
+            revert BEAN_NoCancellableOffer();
 
         // Remove the offer
         _cleanupOffer(offerHash, offer.offerer);
@@ -462,7 +462,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         // Handle returning escrowed funds
         if (offer.escrowed) {
             if (offer.price > totalInEscrow[offer.offerer])
-                revert BEANEscrowOverWithdraw();
+                revert BEAN_EscrowOverWithdraw();
             _returnEscrow(offer.offerer, offer.price);
         }
     }
@@ -473,13 +473,13 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
     ) external onlyAdmins nonReentrant {
         Offer memory offer = offers[offerHash];
         if (offer.price == 0) 
-            revert BEANNoCancellableOffer();
+            revert BEAN_NoCancellableOffer();
         // Remove the offer
         _cleanupOffer(offerHash, offer.offerer);
         // Handle returning escrowed funds
         if (offer.escrowed && returnEscrow) {
             if (offer.price > totalInEscrow[offer.offerer])
-                revert BEANEscrowOverWithdraw();
+                revert BEAN_EscrowOverWithdraw();
             _returnEscrow(offer.offerer, offer.price);
         }
     }
@@ -489,17 +489,17 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         bytes32 offerHash
     ) external nonReentrant {
         if (tradingPaused)
-            revert BEANTradingPaused();
+            revert BEAN_TradingPaused();
         Offer memory offer = offers[offerHash];
         IERC721 _nft = IERC721(offer.contractAddress);
         if (!collectionTradingEnabled[offer.contractAddress])
-            revert BEANCollectionNotEnabled();
+            revert BEAN_CollectionNotEnabled();
         if (offer.price == 0)
-            revert BEANNoOfferFound();
+            revert BEAN_NoOfferFound();
         if (offer.expiry != 0 && block.timestamp > offer.expiry)
-            revert BEANOrderExpired();
+            revert BEAN_OrderExpired();
         if(msg.sender != _nft.ownerOf(offer.tokenId))
-            revert BEANCallerNotOwner();
+            revert BEAN_CallerNotOwner();
 
         _cleanupOffer(offerHash, offer.offerer);
 
@@ -567,18 +567,18 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
 
     function addFundsToEscrow() external payable nonReentrant {
         if (!usersCanWithdrawEscrow)
-            revert BEANWithdrawNotEnabled();
+            revert BEAN_WithdrawNotEnabled();
         totalEscrowedAmount += msg.value;
         totalInEscrow[msg.sender] += msg.value;
     }
 
     function withdrawFundsFromEscrow(uint256 amount) external nonReentrant {
         if (!usersCanWithdrawEscrow)
-            revert BEANWithdrawNotEnabled();
+            revert BEAN_WithdrawNotEnabled();
         if (totalInEscrow[msg.sender] == 0)
-            revert BEANZeroInEscrow();
+            revert BEAN_ZeroInEscrow();
         if (totalInEscrow[msg.sender] < amount)
-            revert BEANEscrowOverWithdraw();
+            revert BEAN_EscrowOverWithdraw();
         _returnEscrow(msg.sender, amount);
     }
 

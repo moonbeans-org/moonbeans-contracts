@@ -174,7 +174,7 @@ describe("Market Listings", function () {
         const listingToClear = listingIds[0];
 
         await expect(beanieMarket.connect(addrs[0]).clearListing(listingToClear)).to.be.revertedWithCustomError(
-            beanieMarket, "BEANNotOwnerOrAdmin"
+            beanieMarket, "BEAN_NotOwnerOrAdmin"
         );
     });
   });
@@ -510,7 +510,7 @@ describe("Market Listings", function () {
     it("Cannot fulfill listing for an unlisted token", async function () {
       const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndListNFTsFixture);
       await expect(beanieMarket.connect(addrs[5]).fulfillListing(ethers.utils.hexZeroPad(0x2, 32), addrs[5].address)
-        ).to.be.revertedWithCustomError(beanieMarket, "BEANCollectionNotEnabled");
+        ).to.be.revertedWithCustomError(beanieMarket, "BEAN_CollectionNotEnabled");
     });
 
     it("Cannot fulfill listing by sending too little ETH", async function () {
@@ -524,7 +524,7 @@ describe("Market Listings", function () {
 
       await expect(beanieMarket.connect(addrs[5]).fulfillListing(
         listingToFulfill, addrs[1].address, {value: listingData.price.div(2)})
-        ).to.be.revertedWithCustomError(beanieMarket, "BEANNotEnoughEthSent");
+        ).to.be.revertedWithCustomError(beanieMarket, "BEAN_NotEnoughEthSent");
     });
 
     it("Cannot fulfill listing if past expiry", async function () {
@@ -541,7 +541,7 @@ describe("Market Listings", function () {
 
       await expect(beanieMarket.connect(addrs[5]).fulfillListing(
         listingToFulfill, addrs[1].address, {value: listingData.price})
-        ).to.be.revertedWithCustomError(beanieMarket, "BEANOrderExpired");
+        ).to.be.revertedWithCustomError(beanieMarket, "BEAN_OrderExpired");
     });
 
     it("Cannot fulfill listing if token owner has changed", async function () {
@@ -558,7 +558,7 @@ describe("Market Listings", function () {
 
       await expect(beanieMarket.connect(addrs[5]).fulfillListing(
         listingToFulfill, addrs[4].address, {value: listingData.price})
-        ).to.be.revertedWithCustomError(beanieMarket, "BEANListingNotActive");
+        ).to.be.revertedWithCustomError(beanieMarket, "BEAN_ListingNotActive");
     });
   })
 
@@ -571,7 +571,7 @@ describe("Market Listings", function () {
       const listing0Data = await beanieMarket.listings(listing0hash);
 
       await expect(beanieMarket.connect(addrs[5]).delistToken(listing0hash)
-        ).to.be.revertedWithCustomError(beanieMarket, "BEANDelistNotApproved");
+        ).to.be.revertedWithCustomError(beanieMarket, "BEAN_DelistNotApproved");
     });
 
     it("Can delist unowned token if caller is admin", async function () {
@@ -592,7 +592,7 @@ describe("Market Listings", function () {
       const listing0Data = await beanieMarket.listings(listing0hash);
 
       await expect(beanieMarket.connect(addrs[2]).delistToken(listing0hash)
-        ).to.be.revertedWithCustomError(beanieMarket, "BEANDelistNotApproved");
+        ).to.be.revertedWithCustomError(beanieMarket, "BEAN_DelistNotApproved");
 
       await dummyNFT.connect(addrs[0]).transferFrom(addrs[0].address, addrs[1].address, listing0Data.tokenId);
       await beanieMarket.connect(addrs[2]).delistToken(listing0hash);
@@ -606,7 +606,7 @@ describe("Market Listings", function () {
         const listing0Data = await beanieMarket.listings(listing0hash);
   
         await expect(beanieMarket.connect(addrs[2]).delistToken(listing0hash)
-          ).to.be.revertedWithCustomError(beanieMarket, "BEANDelistNotApproved");
+          ).to.be.revertedWithCustomError(beanieMarket, "BEAN_DelistNotApproved");
   
         await dummyNFT.connect(addrs[0]).setApprovalForAll(beanieMarket.address, false);
         await beanieMarket.connect(addrs[2]).delistToken(listing0hash);
@@ -620,13 +620,13 @@ describe("Market Listings", function () {
       const listing0Data = await beanieMarket.listings(listing0hash);
 
       await expect(beanieMarket.connect(addrs[2]).delistToken(listing0hash)
-        ).to.be.revertedWithCustomError(beanieMarket, "BEANDelistNotApproved");
+        ).to.be.revertedWithCustomError(beanieMarket, "BEAN_DelistNotApproved");
 
       await network.provider.send("evm_setNextBlockTimestamp", [Number(listing0Data.expiry) - 10])
       await network.provider.send("evm_mine")
 
       await expect(beanieMarket.connect(addrs[2]).delistToken(listing0hash)
-        ).to.be.revertedWithCustomError(beanieMarket, "BEANDelistNotApproved");
+        ).to.be.revertedWithCustomError(beanieMarket, "BEAN_DelistNotApproved");
 
       await network.provider.send("evm_setNextBlockTimestamp", [Number(listing0Data.expiry) + 10])
       await network.provider.send("evm_mine")
