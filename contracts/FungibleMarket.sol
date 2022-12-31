@@ -39,7 +39,7 @@ error BEAN_EscrowOverWithdraw();
 // Util
 error BEAN_IntegerOverFlow();
 
-contract FungibleMarketPlace is ReentrancyGuard, Ownable {
+contract FungibleMarket is ReentrancyGuard, Ownable {
     event TradeOpened(
         bytes32 indexed tradeId,
         address indexed token,
@@ -87,12 +87,12 @@ contract FungibleMarketPlace is ReentrancyGuard, Ownable {
     uint256 public beanBuybackFee = 10; //1%
     uint256 public defaultCollectionOwnerFee = 0; //0%
     uint256 public totalEscrowedAmount = 0;
-    uint256 public nonce = 0;
+    uint256 public nonce = 1;
 
     uint256 public accruedAdminFeesEth;
     uint256 public accruedAdminFees;
 
-    IERC20 public TOKEN = IERC20(0xAcc15dC74880C9944775448304B263D191c6077F); //WETH/WMOVR/WGLMR/WHATEVER
+    IERC20 public TOKEN; //WETH/WMOVR/WGLMR/WHATEVER
     address public devAddress = 0x24312a0b911fE2199fbea92efab55e2ECCeC637D;
     address public beanieHolderAddress = 0xdA6367C6510d8f2D20A345888f9Dff3eb3226B02;
     address public beanBuybackAddress = 0xE9b8258668E17AFA5D09de9F10381dE5565dbDc0;
@@ -121,7 +121,6 @@ contract FungibleMarketPlace is ReentrancyGuard, Ownable {
         uint128 expiry;
         address ca;
         address maker;
-        // Status status;
         TradeFlags tradeFlags;
     }
 
@@ -153,6 +152,17 @@ contract FungibleMarketPlace is ReentrancyGuard, Ownable {
     mapping(address => bool) public administrators;
 
     mapping(bytes32 => Trade) public trades;
+    mapping(address => bytes32[]) public ordersByUser;
+
+    /*
+        Qs: Should we keep the same listing/order storage lookups as in BeanieMarket?
+        Break out orders into buy/sell components. Sell orders by user + contract,
+        buy orders by user.
+    */
+
+    constructor(address paymentToken) {
+        TOKEN = IERC20(paymentToken);
+    }
 
     modifier onlyAdmins() {
         if (!(administrators[_msgSender()] || owner() == _msgSender()))
@@ -160,48 +170,19 @@ contract FungibleMarketPlace is ReentrancyGuard, Ownable {
         _;
     }
 
-    function _validateSellOrder(
-        address ca,
-        address maker,
-        uint256 tokenId,
-        uint256 quantity,
-        TradeFlags memory tradeFlags
-    ) internal view {
-        if (IERC1155(ca).balanceOf(maker, tokenId) < quantity)
-            revert BEAN_SellAssetBalanceLow();
-        if (!IERC1155(ca).isApprovedForAll(maker, address(this)))
-            revert BEAN_ContractNotApproved();
-        if (tradeFlags.isEscrowed) 
-            revert BEAN_NoEscrowedSell();
-    }
-
-    function _validateBuyOrder(
-        uint256 totalPrice,
-        TradeFlags memory tradeFlags
-    ) internal view {
-        // Validation
-        if (tradeFlags.isEscrowed) {
-            if (msg.value < totalPrice)
-              revert BEAN_EscrowCurrencyUnderfunded();
-        } else {
-            if (TOKEN.allowance(msg.sender, address(this)) < totalPrice ||
-                TOKEN.balanceOf(msg.sender) < totalPrice)
-                revert BEAN_BuyerAccountUnderfunded();
-        }
-
-    }
-
-    function _buildTradeId(
-        address user
-    ) internal returns (bytes32 tradeId) {
-      unchecked {++nonce;}
-      tradeId = keccak256(
-          abi.encodePacked(user, block.timestamp, nonce)
-      );
-    }
-
     // TRADES
     // Open a trade (from either the buyer or the seller's side).
+    /**
+     * @dev Opens a buy or sell order
+     * @param ca Contract address of 1155 to list
+     * @param tokenId `tokenId` of 1155 on `ca` to list
+     * @param quantity quantity of `tokenId` to list
+     * @param price price per token, where price for the entire listing equals `price` * `quantity`
+     * @param expiry timestamp for order expiry
+     * @param tradeFlags tradeflag struct to determine trade type (buy/sell), allow partial fills
+     *        flag, and whether or not the trade is escrowed (requres submission of ETH, only for
+     *        open buy orders)
+     */
     function openTrade(
         address ca,
         uint256 tokenId,
@@ -445,6 +426,45 @@ contract FungibleMarketPlace is ReentrancyGuard, Ownable {
             _trade.expiry,
             block.timestamp
         );
+    }
+
+    function _validateSellOrder(
+        address ca,
+        address maker,
+        uint256 tokenId,
+        uint256 quantity,
+        TradeFlags memory tradeFlags
+    ) internal view {
+        if (IERC1155(ca).balanceOf(maker, tokenId) < quantity)
+            revert BEAN_SellAssetBalanceLow();
+        if (!IERC1155(ca).isApprovedForAll(maker, address(this)))
+            revert BEAN_ContractNotApproved();
+        if (tradeFlags.isEscrowed) 
+            revert BEAN_NoEscrowedSell();
+    }
+
+    function _validateBuyOrder(
+        uint256 totalPrice,
+        TradeFlags memory tradeFlags
+    ) internal view {
+        // Validation
+        if (tradeFlags.isEscrowed) {
+            if (msg.value < totalPrice)
+              revert BEAN_EscrowCurrencyUnderfunded();
+        } else {
+            if (TOKEN.allowance(msg.sender, address(this)) < totalPrice ||
+                TOKEN.balanceOf(msg.sender) < totalPrice)
+                revert BEAN_BuyerAccountUnderfunded();
+        }
+    }
+
+    function _buildTradeId(
+        address user
+    ) internal returns (bytes32 tradeId) {
+      unchecked {++nonce;}
+      tradeId = keccak256(
+          abi.encodePacked(user, block.timestamp, nonce)
+      );
     }
 
     function _processPaymentFeesEth(

@@ -6,6 +6,10 @@ const ONE_ETH = ethers.utils.parseEther("1.0");
 const BIG_ZERO = ethers.constants.Zero;
 const ADDR_ZERO = ethers.constants.AddressZero;
 
+function makeBigNum(num) {
+    return ethers.BigNumber.from(num);
+}
+
 describe("Market Escrow Offers", function () {
   async function deployMarketAndNFTFixture() {
     const [owner, ...addrs] = await ethers.getSigners();
