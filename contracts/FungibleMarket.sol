@@ -20,6 +20,7 @@ error BEAN_BuyerAccountUnderfunded();
 error BEAN_EscrowCurrencyUnderfunded();
 error BEAN_SellAssetBalanceLow();
 error BEAN_ContractNotApproved();
+error BEAN_PaymentTokenNotAproved();
 
 // Trade Fulfillment
 error BEAN_OrderExpired();
@@ -29,10 +30,11 @@ error BEAN_TradeNotParitalFill();
 error BEAN_NotEnoughTokensToFulfullBuy();
 error BEAN_NotEnoughInEscrow();
 error BEAN_NotEnoughSellerAllowance();
-error BEAN_NotEnoughSellerFunds();
+error BEAN_NotEnoughMakerFunds();
 error BEAN_AmountOverQuantity();
 error BEAN_NotEnoughTokensToFulfull();
 error BEAN_SellFulfillUnderfunded();
+error BEAN_BuyOrderWithValue(); //TODO: Test
 
 // Escrow
 error BEAN_EscrowOverWithdraw();
@@ -40,7 +42,7 @@ error BEAN_EscrowOverWithdraw();
 // Util
 error BEAN_IntegerOverFlow();
 
-contract FungibleMarketPlace is ReentrancyGuard, Ownable {
+contract FungibleMarket is ReentrancyGuard, Ownable {
     using BeanUtils for bytes32[];
 
     event TradeOpened(
@@ -86,11 +88,11 @@ contract FungibleMarketPlace is ReentrancyGuard, Ownable {
     uint128 constant SMOLLER_MAX_INT = ~uint64(0);
 
     // Fees are out of 1000, to allow for 0.1% stepped fees.
-    uint256 public devFee = 10; //1%
-    uint256 public beanieHolderFee = 10; //1%
-    uint256 public beanBuybackFee = 10; //1%
-    uint256 public defaultCollectionOwnerFee = 0; //0%
-    uint256 public totalEscrowedAmount = 0;
+    uint256 public devFee = 100; //1%
+    uint256 public beanieHolderFee = 100; //1%
+    uint256 public beanBuybackFee = 100; //1%
+    uint256 public defaultCollectionOwnerFee; //0%
+    uint256 public totalEscrowedAmount;
     uint256 public nonce = 1;
 
     uint256 public accruedAdminFeesEth;
@@ -162,50 +164,27 @@ contract FungibleMarketPlace is ReentrancyGuard, Ownable {
     mapping(address => bytes32[]) sellOrdersByUser;
     mapping(address => bytes32[]) buyOrdersByUser;
 
+    function getSellOrdersByUser(address user) external view returns(bytes32[] memory orderHashes) {
+        orderHashes = sellOrdersByUser[user];
+    }
+
+    function getBuyOrdersByUser(address user) external view returns(bytes32[] memory orderHashes) {
+        orderHashes = buyOrdersByUser[user];
+    }
+
+    constructor(address _token) {
+        TOKEN = IERC20(_token);
+        administrators[msg.sender] = true;
+        approveSelf();
+    }
+
     modifier onlyAdmins() {
         if (!(administrators[_msgSender()] || owner() == _msgSender()))
             revert BEAN_NotOwnerOrAdmin();
         _;
     }
 
-    function _validateSellOrder(
-        address ca,
-        address maker,
-        uint256 tokenId,
-        uint256 quantity,
-        TradeFlags memory tradeFlags
-    ) internal view {
-        if (IERC1155(ca).balanceOf(maker, tokenId) < quantity)
-            revert BEAN_SellAssetBalanceLow();
-        if (!IERC1155(ca).isApprovedForAll(maker, address(this)))
-            revert BEAN_ContractNotApproved();
-        if (tradeFlags.isEscrowed) revert BEAN_NoEscrowedSell();
-    }
-
-    function _validateBuyOrder(uint256 totalPrice, TradeFlags memory tradeFlags)
-        internal
-        view
-    {
-        // Validation
-        if (tradeFlags.isEscrowed) {
-            if (msg.value < totalPrice) revert BEAN_EscrowCurrencyUnderfunded();
-        } else {
-            if (
-                TOKEN.allowance(msg.sender, address(this)) < totalPrice ||
-                TOKEN.balanceOf(msg.sender) < totalPrice
-            ) revert BEAN_BuyerAccountUnderfunded();
-        }
-    }
-
-    function _buildTradeId(address user) internal returns (bytes32 tradeId) {
-        unchecked {
-            ++nonce;
-        }
-        tradeId = keccak256(abi.encodePacked(user, block.timestamp, nonce));
-    }
-
     // TRADES
-    // Open a trade (from either the buyer or the seller's side).
     /**
      * @dev Opens a buy or sell order
      * @param ca Contract address of 1155 to list
@@ -361,7 +340,7 @@ contract FungibleMarketPlace is ReentrancyGuard, Ownable {
         if (feesOn) {
             _processPaymentFeesEth(seller, _trade.ca, totalPrice);
         } else {
-            _sendEth(seller, amount);
+            _sendEth(seller, totalPrice);
         }
     }
 
@@ -375,6 +354,8 @@ contract FungibleMarketPlace is ReentrancyGuard, Ownable {
         uint256 amount
     ) internal {
         // Check allowances of buy order fulfiller.
+        if (msg.value > 0)
+            revert BEAN_BuyOrderWithValue();
         if (!IERC1155(_trade.ca).isApprovedForAll(seller, address(this)))
             revert BEAN_ContractNotApproved();
         if (IERC1155(_trade.ca).balanceOf(seller, _trade.tokenId) < amount)
@@ -386,7 +367,7 @@ contract FungibleMarketPlace is ReentrancyGuard, Ownable {
             else if (TOKEN.allowance(_trade.maker, address(this)) < totalPrice)
                 revert BEAN_NotEnoughSellerAllowance();
         if (TOKEN.balanceOf(_trade.maker) < totalPrice)
-            revert BEAN_NotEnoughSellerFunds();
+            revert BEAN_NotEnoughMakerFunds();
 
         if (_trade.tradeFlags.isEscrowed) {
             totalEscrowedAmount -= totalPrice;
@@ -516,8 +497,10 @@ contract FungibleMarketPlace is ReentrancyGuard, Ownable {
             if (msg.value < totalPrice)
               revert BEAN_EscrowCurrencyUnderfunded();
         } else {
-            if (TOKEN.allowance(msg.sender, address(this)) < totalPrice ||
-                TOKEN.balanceOf(msg.sender) < totalPrice)
+            //TODO: Split this error out to be explicit
+            if (TOKEN.allowance(msg.sender, address(this)) < totalPrice)
+                revert BEAN_PaymentTokenNotAproved();
+            if (TOKEN.balanceOf(msg.sender) < totalPrice)
                 revert BEAN_BuyerAccountUnderfunded();
         }
     }
@@ -828,6 +811,10 @@ contract FungibleMarketPlace is ReentrancyGuard, Ownable {
         feesOn = _value;
     }
 
+    function setAutoSendFees(bool _value) external onlyOwner {
+        autoSendFees = _value;
+    }
+
     function setCollectionOwnersCanSetRoyalties(bool _value)
         external
         onlyOwner
@@ -875,11 +862,11 @@ contract FungibleMarketPlace is ReentrancyGuard, Ownable {
         uint256 _collectionOwnerFee = collectionOwnerFees[ca] == 0
             ? defaultCollectionOwnerFee
             : collectionOwnerFees[ca];
-        uint256 devFeeAmount = (amount * devFee) / 1000;
-        uint256 beanieHolderFeeAmount = (amount * beanieHolderFee) / 1000;
-        uint256 beanBuybackFeeAmount = (amount * beanBuybackFee) / 1000;
+        uint256 devFeeAmount = (amount * devFee) / 10000;
+        uint256 beanieHolderFeeAmount = (amount * beanieHolderFee) / 10000;
+        uint256 beanBuybackFeeAmount = (amount * beanBuybackFee) / 10000;
         uint256 collectionOwnerFeeAmount = (amount * _collectionOwnerFee) /
-            1000;
+            10000;
         uint256 remainder = amount -
             (devFeeAmount +
                 beanieHolderFeeAmount +
@@ -904,6 +891,10 @@ contract FungibleMarketPlace is ReentrancyGuard, Ownable {
     function _sendEth(address _address, uint256 _amount) private {
         (bool success, ) = _address.call{value: _amount}("");
         require(success, "Transfer failed.");
+    }
+
+    function approveSelf() public onlyAdmins() {
+        IERC20(TOKEN).approve(address(this), type(uint256).max);
     }
 
     // Required in order to receive MOVR/GLMR.
