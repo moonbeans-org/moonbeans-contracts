@@ -8,6 +8,9 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts/interfaces/IERC2981.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+
+import "./interface/IWETH.sol";
+
 import "./BeanUtils.sol";
 
 import "hardhat/console.sol";
@@ -39,6 +42,7 @@ error BEAN_TokenNotListed();
 error BEAN_NotEnoughEthSent();
 
 //Escrow
+error BEAN_TransferFailed();
 error BEAN_WithdrawNotEnabled();
 error BEAN_EscrowOverWithdraw();
 error BEAN_ZeroInEscrow();
@@ -412,19 +416,38 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         emit OfferPlaced(ca, tokenId, price, expiry, msg.sender, offerHash, IERC721(ca).ownerOf(tokenId));
     }
 
-    // Make an escrowed offer (checks balance of bidder, then holds the bid in the contract as an escrow).
-    function makeEscrowedOffer(
+    function makeEscrowedOfferEth(
         address ca,
         uint256 tokenId,
         uint256 expiry
     ) public payable nonReentrant {
-        if (msg.value > SMOL_MAX_INT || expiry > SMOL_MAX_INT)
+        IWETH(TOKEN).deposit{value: msg.value}();
+        _processEscrowOffer(ca, tokenId, expiry, msg.value);
+    }
+
+    function makeEscrowedOfferTokens(
+        address ca,
+        uint256 tokenId,
+        uint256 expiry,
+        uint256 price
+    ) public payable nonReentrant {
+        //TODO: Make this use safeTransfer
+        bool success = IERC20(TOKEN).transferFrom(msg.sender, address(this), price);
+        if (!success)
+            revert BEAN_TransferFailed();
+        _processEscrowOffer(ca, tokenId, expiry, price);
+    }
+
+    function _processEscrowOffer(
+        address ca,
+        uint256 tokenId,
+        uint256 expiry,
+        uint256 price
+    ) public payable nonReentrant {
+        if (price > SMOL_MAX_INT || expiry > SMOL_MAX_INT)
             revert BEAN_IntegerOverFlow();
         if (tradingPaused)
             revert BEAN_TradingPaused();
-        
-        uint256 price = msg.value;
-
         if (price == 0) 
             revert BEAN_ZeroPrice();
         if (expiry != 0 && expiry < block.timestamp)
