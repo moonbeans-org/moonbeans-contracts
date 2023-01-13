@@ -13,8 +13,6 @@ import "./interface/IWETH.sol";
 
 import "./BeanUtils.sol";
 
-import "hardhat/console.sol";
-
 error BEAN_DelistNotApproved();
 error BEAN_NotAuthorized();
 error BEAN_ListingNotActive();
@@ -107,7 +105,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
     uint256 public accruedAdminFeesEth;
     uint256 public accruedAdminFees;
 
-    address public TOKEN = 0x722E8BdD2ce80A4422E880164f2079488e115365; //WETH, NOVA
+    IWETH public TOKEN; //WETH, NOVA
     address public devAddress = 0x24312a0b911fE2199fbea92efab55e2ECCeC637D;
     address public beanieHolderAddress = 0xB967DaE501F16E229A83f0C4FeA263A4be528dF4;
     address public beanBuybackAddress = 0xE9b8258668E17AFA5D09de9F10381dE5565dbDc0;
@@ -171,7 +169,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
 
     constructor(address _TOKEN) {
         administrators[msg.sender] = true;
-        TOKEN = _TOKEN;
+        TOKEN = IWETH(_TOKEN);
         approveSelf();
     }
 
@@ -399,11 +397,9 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         if (price == 0)
             revert BEAN_ZeroPrice();
 
-        IERC20 token = IERC20(TOKEN);
-
-        if (token.allowance(msg.sender, address(this)) < price)
+        if (TOKEN.allowance(msg.sender, address(this)) < price)
             revert BEAN_ContractNotApproved();
-        if (token.balanceOf(msg.sender) < price)
+        if (TOKEN.balanceOf(msg.sender) < price)
             revert BEAN_UserTokensLow();
         if (expiry != 0 && expiry < block.timestamp)
             revert BEAN_BadExpiry();
@@ -421,7 +417,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         uint256 tokenId,
         uint256 expiry
     ) public payable nonReentrant {
-        IWETH(TOKEN).deposit{value: msg.value}();
+        TOKEN.deposit{value: msg.value}();
         _processEscrowOffer(ca, tokenId, expiry, msg.value);
     }
 
@@ -432,9 +428,8 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         uint256 price
     ) public payable nonReentrant {
         //TODO: Make this use safeTransfer
-        bool success = IERC20(TOKEN).transferFrom(msg.sender, address(this), price);
-        if (!success)
-            revert BEAN_TransferFailed();
+        bool success = TOKEN.transferFrom(msg.sender, address(this), price);
+        if (!success) revert BEAN_TransferFailed();
         _processEscrowOffer(ca, tokenId, expiry, price);
     }
 
@@ -443,7 +438,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         uint256 tokenId,
         uint256 expiry,
         uint256 price
-    ) public payable nonReentrant {
+    ) internal {
         if (price > SMOL_MAX_INT || expiry > SMOL_MAX_INT)
             revert BEAN_IntegerOverFlow();
         if (tradingPaused)
@@ -612,6 +607,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
     function _returnEscrow(address depositor, uint256 escrowAmount) private {
         totalEscrowedAmount -= escrowAmount;
         totalInEscrow[depositor] -= escrowAmount;
+        TOKEN.withdraw(escrowAmount);
         _sendEth(depositor, escrowAmount);
     }
 
@@ -681,7 +677,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         uint256 beanBuybackAmount
     ) private {
         uint256 accruedFees = devAmount + beanieHolderAmount + beanBuybackAmount;
-        IERC20(TOKEN).transferFrom(from, address(this), accruedFees);
+        TOKEN.transferFrom(from, address(this), accruedFees);
         accruedAdminFees += accruedFees;
     }
 
@@ -693,11 +689,11 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         uint256 beanBuybackAmount
     ) private {
         if (devAmount != 0 )
-            IERC20(TOKEN).transferFrom(from, devAddress, devAmount);
+            TOKEN.transferFrom(from, devAddress, devAmount);
         if (beanieHolderAmount != 0 )
-            IERC20(TOKEN).transferFrom(from, beanieHolderAddress, beanieHolderAmount);
+            TOKEN.transferFrom(from, beanieHolderAddress, beanieHolderAmount);
         if (beanBuybackAmount != 0 )
-            IERC20(TOKEN).transferFrom(from, beanBuybackAddress, beanBuybackAmount);
+            TOKEN.transferFrom(from, beanBuybackAddress, beanBuybackAmount);
     }
 
     //---------------------------------
@@ -761,9 +757,9 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         administrators[admin] = value;
     }
 
-    function setPaymentToken(address _token) external onlyOwner {
-        TOKEN = _token;
-    }
+    // function setPaymentToken(address _token) external onlyOwner {
+    //     TOKEN = _token;
+    // }
 
     function setTrading(bool value) external onlyOwner {
         tradingPaused = value;
@@ -919,7 +915,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         require(
             totalInEscrow[newOwner] >= price,
             "Buyer does not have enough money in escrow."
-        );
+        );  
         require(totalEscrowedAmount >= price, "Escrow balance too low.");
 
         //update escrow amounts
@@ -928,6 +924,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         //swippity swappity
         _nft.safeTransferFrom(oldOwner, newOwner, tokenId);
         //fees
+        TOKEN.withdraw(price);
         if (feesOn) {
             //calculate fees
             (
@@ -957,7 +954,6 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         address payable oldOwner,
         address payable newOwner
     ) private {
-        IERC20 _token = IERC20(TOKEN);
         _nft.safeTransferFrom(oldOwner, newOwner, tokenId);
         //fees
         if (feesOn) {
@@ -968,15 +964,15 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
                 uint256 collectionOwnerFeeAmount,
                 uint256 priceNetFees
             ) = _calculateAmounts(ca, price);
-            _token.transferFrom(newOwner, oldOwner, priceNetFees);
-            _token.transferFrom(newOwner, collectionOwners[ca], collectionOwnerFeeAmount);
+            TOKEN.transferFrom(newOwner, oldOwner, priceNetFees);
+            TOKEN.transferFrom(newOwner, collectionOwners[ca], collectionOwnerFeeAmount);
             if (autoSendFees) {
                 _processDevFeesToken(newOwner, devFeeAmount, beanieHolderFeeAmount, beanBuybackFeeAmount);
             } else {
                 _accrueDevFeesToken(newOwner, devFeeAmount, beanieHolderFeeAmount, beanBuybackFeeAmount);
             }
         } else {
-            _token.transferFrom(newOwner, oldOwner, price);
+            TOKEN.transferFrom(newOwner, oldOwner, price);
         }
     }
 
@@ -986,6 +982,8 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
     }
 
     function approveSelf() public onlyAdmins() {
-        IERC20(TOKEN).approve(address(this), type(uint256).max);
+        TOKEN.approve(address(this), type(uint256).max);
     }
+
+    receive() external payable {}
 }

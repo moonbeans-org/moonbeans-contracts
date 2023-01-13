@@ -10,21 +10,21 @@ function makeBigNum(num) {
     return ethers.BigNumber.from(num);
 }
 
-describe.only("Market Escrow Offers", function () {
+describe("Market Escrow Offers", function () {
   async function deployMarketAndNFTFixture() {
     const [owner, ...addrs] = await ethers.getSigners();
     const admin = addrs[9];
 
-    const ERC20 = await ethers.getContractFactory("ERC20Mock");
-    const paymentToken = await ERC20.deploy();
-    await paymentToken.deployed();
+    const WETH = await ethers.getContractFactory("WETH9");
+    const weth = await WETH.deploy();
+    await weth.deployed();
 
     for (let i = 0; i<5; i++) {
-      paymentToken.mint(addrs[i].address, ONE_ETH.mul(100));
+      weth.connect(addrs[i]).deposit({value: ONE_ETH.mul(50)});
     }
 
     const MARKET = await ethers.getContractFactory("BeanieMarketV11");
-    const beanieMarket = await MARKET.deploy(paymentToken.address);
+    const beanieMarket = await MARKET.deploy(weth.address);
     await beanieMarket.deployed();
 
     const NFT = await ethers.getContractFactory("ERC721Mock");
@@ -41,23 +41,23 @@ describe.only("Market Escrow Offers", function () {
     const block = await ethers.provider.getBlock();
     const now = block['timestamp']
 
-    return { beanieMarket, dummyNFT, paymentToken, owner, admin, addrs, now };
+    return { beanieMarket, dummyNFT, weth, owner, admin, addrs, now };
   }
 
   async function deployMarketAndMakeEscrowOffersFixture() {
         const [owner, ...addrs] = await ethers.getSigners();
     const admin = addrs[9];
 
-    const ERC20 = await ethers.getContractFactory("ERC20Mock");
-    const paymentToken = await ERC20.deploy();
-    await paymentToken.deployed();
+    const WETH = await ethers.getContractFactory("WETH9");
+    const weth = await WETH.deploy();
+    await weth.deployed();
 
     for (let i = 0; i<5; i++) {
-      paymentToken.mint(addrs[i].address, ONE_ETH.mul(100));
+      weth.connect(addrs[i]).deposit({value: ONE_ETH.mul(50)});
     }
 
     const MARKET = await ethers.getContractFactory("BeanieMarketV11");
-    const beanieMarket = await MARKET.deploy(paymentToken.address);
+    const beanieMarket = await MARKET.deploy(weth.address);
     await beanieMarket.deployed();
 
     const NFT = await ethers.getContractFactory("ERC721Mock");
@@ -105,91 +105,114 @@ describe.only("Market Escrow Offers", function () {
       {value: ONE_ETH}
     );
 
-    return { beanieMarket, dummyNFT, paymentToken, owner, addrs, now };
+    return { beanieMarket, dummyNFT, weth, owner, addrs, now };
   }
 
+  describe("WETH9 test", function () {
+    it("Can deposit and withdraw", async function () {
+      const { beanieMarket, dummyNFT, weth, owner, addrs, now } = await loadFixture(deployMarketAndNFTFixture);
+      weth.connect(addrs[0]).deposit({value: ONE_ETH});
+      weth.connect(addrs[0]).withdraw(ONE_ETH);
+    });
+  });
+
   describe("escrow offers", function () {
-    it.only("Make escrow offer", async function () {
-      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndNFTFixture);
+    it("Make escrow offer", async function () {
+      const { beanieMarket, dummyNFT, weth, owner, addrs, now } = await loadFixture(deployMarketAndNFTFixture);
 
       //Check the storage structures of several listings. We do this for two different lister addresses to test.
       //TODO: maybe add a second contract address.
 
       let balBefore = await addrs[2].getBalance();
       let tx = await beanieMarket.connect(addrs[2]).makeEscrowedOfferEth(dummyNFT.address, 1, now + 10, {value: ONE_ETH}); // offer1
-      // let balAfter = await addrs[2].getBalance();
-      // let receipt = await tx.wait();
-      // let gasSpent = receipt.gasUsed.mul(receipt.effectiveGasPrice);
+      let balAfter = await addrs[2].getBalance();
+      let receipt = await tx.wait();
+      let gasSpent = receipt.gasUsed.mul(receipt.effectiveGasPrice);
 
-      // expect(balAfter).to.eql(balBefore.sub(ONE_ETH).sub(gasSpent));
+      expect(balAfter).to.eql(balBefore.sub(ONE_ETH).sub(gasSpent));
 
-      // const addr2Offers_1 = await beanieMarket.getOffersByOfferer(addrs[2].address)
-      // expect(addr2Offers_1.length).to.equal(1);
+      const addr2Offers_1 = await beanieMarket.getOffersByOfferer(addrs[2].address)
+      expect(addr2Offers_1.length).to.equal(1);
 
-      // //same params, make sure it works
-      // await beanieMarket.connect(addrs[2]).makeEscrowedOfferEth(dummyNFT.address, 1, now + 10, {value: ONE_ETH});
-      // const addr2Offers_2 = await beanieMarket.getOffersByOfferer(addrs[2].address)
-      // expect(addr2Offers_2.length).to.equal(2);
-      // expect(addr2Offers_2[0]).to.not.equal(addr2Offers_2[1]);
+      //same params, make sure it works
+      await beanieMarket.connect(addrs[2]).makeEscrowedOfferEth(dummyNFT.address, 1, now + 10, {value: ONE_ETH});
+      const addr2Offers_2 = await beanieMarket.getOffersByOfferer(addrs[2].address)
+      expect(addr2Offers_2.length).to.equal(2);
+      expect(addr2Offers_2[0]).to.not.equal(addr2Offers_2[1]);
 
-      // //Offer for a different token
-      // balBefore = await addrs[2].getBalance();
-      // tx = await beanieMarket.connect(addrs[2]).makeEscrowedOfferEth(dummyNFT.address, 2, now + 100, {value: ONE_ETH.mul(2)}); //offer2
-      // balAfter = await addrs[2].getBalance();
-      // receipt = await tx.wait();
-      // gasSpent = receipt.gasUsed.mul(receipt.effectiveGasPrice);
+      //Offer for a different token
+      balBefore = await addrs[2].getBalance();
+      tx = await beanieMarket.connect(addrs[2]).makeEscrowedOfferEth(dummyNFT.address, 2, now + 100, {value: ONE_ETH.mul(2)}); //offer2
+      balAfter = await addrs[2].getBalance();
+      receipt = await tx.wait();
+      gasSpent = receipt.gasUsed.mul(receipt.effectiveGasPrice);
 
-      // expect(balAfter).to.eql(balBefore.sub(ONE_ETH.mul(2)).sub(gasSpent));
+      expect(balAfter).to.eql(balBefore.sub(ONE_ETH.mul(2)).sub(gasSpent));
 
-      // const addr2Offers_3 = await beanieMarket.getOffersByOfferer(addrs[2].address);
-      // expect(addr2Offers_3.length).to.equal(3);
+      const addr2Offers_3 = await beanieMarket.getOffersByOfferer(addrs[2].address);
+      expect(addr2Offers_3.length).to.equal(3);
 
-      // //3rd account makes an offer
-      // await beanieMarket.connect(addrs[3]).makeEscrowedOfferEth(dummyNFT.address, 1, now + 1000, {value: ONE_ETH}); //offer3
-      // const addr3Offers_1 = await beanieMarket.getOffersByOfferer(addrs[3].address);
-      // expect(addr3Offers_1.length).to.equal(1);
+      //3rd account makes an offer
+      await beanieMarket.connect(addrs[3]).makeEscrowedOfferEth(dummyNFT.address, 1, now + 1000, {value: ONE_ETH}); //offer3
+      const addr3Offers_1 = await beanieMarket.getOffersByOfferer(addrs[3].address);
+      expect(addr3Offers_1.length).to.equal(1);
 
-      // const offer1 = await beanieMarket.offers(addr2Offers_3[0]);
-      // const offer2 = await beanieMarket.offers(addr2Offers_3[2]);
-      // const offer3 = await beanieMarket.offers(addr3Offers_1[0]);
+      const offer1 = await beanieMarket.offers(addr2Offers_3[0]);
+      const offer2 = await beanieMarket.offers(addr2Offers_3[2]);
+      const offer3 = await beanieMarket.offers(addr3Offers_1[0]);
 
-      // expect(offer1).to.eql(
-      //   [
-      //     ethers.BigNumber.from(1),
-      //     ONE_ETH,
-      //     ethers.BigNumber.from(now + 10),
-      //     dummyNFT.address,
-      //     addrs[2].address,
-      //     true
-      //   ]
-      // )
+      expect(offer1).to.eql(
+        [
+          ethers.BigNumber.from(1),
+          ONE_ETH,
+          ethers.BigNumber.from(now + 10),
+          dummyNFT.address,
+          addrs[2].address,
+          true
+        ]
+      )
 
-      // expect(offer2).to.eql(
-      //   [
-      //     ethers.BigNumber.from(2),
-      //     ONE_ETH.mul(2),
-      //     ethers.BigNumber.from(now + 100),
-      //     dummyNFT.address,
-      //     addrs[2].address,
-      //     true
-      //   ]
-      // )
+      expect(offer2).to.eql(
+        [
+          ethers.BigNumber.from(2),
+          ONE_ETH.mul(2),
+          ethers.BigNumber.from(now + 100),
+          dummyNFT.address,
+          addrs[2].address,
+          true
+        ]
+      )
 
-      // expect(offer3).to.eql(
-      //   [
-      //     ethers.BigNumber.from(1),
-      //     ONE_ETH,
-      //     ethers.BigNumber.from(now + 1000),
-      //     dummyNFT.address,
-      //     addrs[3].address,
-      //     true
-      //   ]
-      // )
+      expect(offer3).to.eql(
+        [
+          ethers.BigNumber.from(1),
+          ONE_ETH,
+          ethers.BigNumber.from(now + 1000),
+          dummyNFT.address,
+          addrs[3].address,
+          true
+        ]
+      )
     });
+
+    it("Making escrow offer ETH correctly updates token balances", async function () {
+      const { beanieMarket, dummyNFT, weth, owner, addrs, now } = await loadFixture(deployMarketAndNFTFixture);
+      await expect(beanieMarket.connect(addrs[2]).makeEscrowedOfferEth(dummyNFT.address, 1, now + 10, {value: ONE_ETH}))
+        .to.changeEtherBalance(addrs[2].address, ONE_ETH.mul(-1));
+      await expect(beanieMarket.connect(addrs[2]).makeEscrowedOfferEth(dummyNFT.address, 1, now + 10, {value: ONE_ETH}))
+        .to.changeTokenBalance(weth, beanieMarket.address, ONE_ETH);
+    })
+
+    it("Making escrow offer token correctly updates token balances", async function () {
+      const { beanieMarket, dummyNFT, weth, owner, addrs, now } = await loadFixture(deployMarketAndNFTFixture);
+      await weth.connect(addrs[2]).approve(beanieMarket.address, ONE_ETH);
+      await expect(beanieMarket.connect(addrs[2]).makeEscrowedOfferTokens(dummyNFT.address, 1, now + 100, ONE_ETH))
+        .to.changeTokenBalances(weth, [addrs[2].address, beanieMarket.address], [ONE_ETH.mul(-1), ONE_ETH]);
+    })
 
     //TODO: Chain offer fulfillment
     it("Fulfill escrow offer ownership change", async function () {
-      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
+      const { beanieMarket, dummyNFT, weth, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
 
       const addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
       const addr3offers = await beanieMarket.getOffersByOfferer(addrs[3].address);
@@ -207,11 +230,11 @@ describe.only("Market Escrow Offers", function () {
       const offer1OldOwner = await dummyNFT.ownerOf(offer1Data.tokenId);
 
       await beanieMarket.connect(addrs[0]).acceptOffer(offer1Hash);
-      expect(await dummyNFT.ownerOf(offer1Data.tokenId)).to.equal(offer1Data.offerer);
+      expect(await dummyNFT.ownerOf(offer1Data.tokenId)).to.equal(offer1Data.offerer); 
     });
 
     it("Fulfill escrow offer update storage structures", async function () {
-      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
+      const { beanieMarket, dummyNFT, weth, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
 
       let addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
       let addr3offers = await beanieMarket.getOffersByOfferer(addrs[3].address);
@@ -240,7 +263,7 @@ describe.only("Market Escrow Offers", function () {
 
     //TODO: reinspect these
     it("Fulfill escrow offer update storage structures (single length array)", async function () {
-      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
+      const { beanieMarket, dummyNFT, weth, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
 
       let addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
       let addr3offers = await beanieMarket.getOffersByOfferer(addrs[3].address);
@@ -268,7 +291,7 @@ describe.only("Market Escrow Offers", function () {
     });
 
     it("Fulfill escrow offer feesOff sends correct eth amount", async function () {
-      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
+      const { beanieMarket, dummyNFT, weth, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
 
       await beanieMarket.connect(owner).setFeesOn(false);
 
@@ -308,7 +331,7 @@ describe.only("Market Escrow Offers", function () {
     });
 
     it("Fulfill escrow feesOn sends correct token amount, autosend on", async function () {
-      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
+      const { beanieMarket, dummyNFT, weth, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
 
       await beanieMarket.connect(owner).setFeesOn(true);
       await beanieMarket.connect(owner).setAutoSendFees(true);
@@ -386,7 +409,7 @@ describe.only("Market Escrow Offers", function () {
     });
 
     it("Fulfill escrow feesOn sends correct token amount, autosend off and then process", async function () {
-      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
+      const { beanieMarket, dummyNFT, weth, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
 
       await beanieMarket.connect(owner).setFeesOn(true);
       await beanieMarket.connect(owner).setAutoSendFees(false);
@@ -473,13 +496,13 @@ describe.only("Market Escrow Offers", function () {
 
   describe("Make escrow offer errors", function() {
     it("Cannot make offer with zero price", async function () {
-      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
+      const { beanieMarket, dummyNFT, weth, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
       await expect(beanieMarket.connect(addrs[0]).makeEscrowedOfferEth(dummyNFT.address, 4, now, {value: ethers.constants.Zero})
         ).to.be.revertedWithCustomError(beanieMarket, "BEAN_ZeroPrice");
     });
 
     it("Cannot make offer with expiry before now", async function () {
-      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
+      const { beanieMarket, dummyNFT, weth, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
 
       await expect(beanieMarket.connect(addrs[0]).makeEscrowedOfferEth(dummyNFT.address, 4, now-1, {value: ONE_ETH})
         ).to.be.revertedWithCustomError(beanieMarket, "BEAN_BadExpiry");
@@ -490,13 +513,13 @@ describe.only("Market Escrow Offers", function () {
 
   describe("Fulfill escrow offer errors", function () {
     it("Cannot accept non-existent offer", async function () {
-      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
+      const { beanieMarket, dummyNFT, weth, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
       await expect(beanieMarket.connect(addrs[2]).acceptOffer(ethers.utils.hexZeroPad(0x2, 32))
         ).to.be.revertedWithCustomError(beanieMarket, "BEAN_CollectionNotEnabled");
     });
 
     it("Cannot accept offer past expiry", async function () {
-      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
+      const { beanieMarket, dummyNFT, weth, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
 
       const addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
 
@@ -512,7 +535,7 @@ describe.only("Market Escrow Offers", function () {
     });
 
     it("Cannot accept offer if not current token owner", async function () {
-      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
+      const { beanieMarket, dummyNFT, weth, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
 
       const addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
 
@@ -528,7 +551,7 @@ describe.only("Market Escrow Offers", function () {
 
   describe("Cancel escrow offer", function () {
     it("Offerer can cancel escrow offer, offerer recieves escrow back", async function () {
-      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
+      const { beanieMarket, dummyNFT, weth, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
 
       let addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
       const addr2offersTail = await addr2offers[addr2offers.length - 1];
@@ -554,7 +577,7 @@ describe.only("Market Escrow Offers", function () {
     });
 
     it("Offerer can cancel escrow offer", async function () {
-      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
+      const { beanieMarket, dummyNFT, weth, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
 
       let addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
       const addr2offersTail = await addr2offers[addr2offers.length - 1];
@@ -562,7 +585,7 @@ describe.only("Market Escrow Offers", function () {
       let offerHash = addr2offers[0];
 
       await expect(beanieMarket.connect(addrs[2]).cancelOffer(offerHash)).to.changeEtherBalances(
-        [beanieMarket.address, addrs[2].address], [ONE_ETH.mul(-1), ONE_ETH]);
+        [addrs[2].address], [ONE_ETH]);
 
       addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
 
@@ -572,7 +595,7 @@ describe.only("Market Escrow Offers", function () {
     });
 
     it("Token owner can cancel escrow offer", async function () {
-      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
+      const { beanieMarket, dummyNFT, weth, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
 
       let addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
       const addr2offersTail = await addr2offers[addr2offers.length - 1];
@@ -580,7 +603,7 @@ describe.only("Market Escrow Offers", function () {
       let offerHash = addr2offers[0];
 
       await expect(beanieMarket.connect(addrs[0]).cancelOffer(offerHash)).to.changeEtherBalances(
-        [beanieMarket.address, addrs[2].address], [ONE_ETH.mul(-1), ONE_ETH]);;
+        [addrs[2].address], [ONE_ETH]);;
 
       addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
 
@@ -590,7 +613,7 @@ describe.only("Market Escrow Offers", function () {
     });
 
     it("Admin can cancel escrow offer", async function () {
-      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
+      const { beanieMarket, dummyNFT, weth, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
 
       let addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
       const addr2offersTail = await addr2offers[addr2offers.length - 1];
@@ -598,7 +621,7 @@ describe.only("Market Escrow Offers", function () {
       let offerHash = addr2offers[0];
 
       await expect(beanieMarket.connect(owner).cancelOffer(offerHash)).to.changeEtherBalances(
-        [beanieMarket.address, addrs[2].address], [ONE_ETH.mul(-1), ONE_ETH]);
+        [addrs[2].address], [ONE_ETH]);
 
       addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
 
@@ -608,7 +631,7 @@ describe.only("Market Escrow Offers", function () {
     });
 
     it("Anyone can cancel escrow offer if past expiry", async function () {
-      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
+      const { beanieMarket, dummyNFT, weth, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
 
       let addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
       const addr2offersTail = await addr2offers[addr2offers.length - 1];
@@ -624,7 +647,7 @@ describe.only("Market Escrow Offers", function () {
       await network.provider.send("evm_mine")
 
       await expect(beanieMarket.connect(addrs[8]).cancelOffer(offerHash)).to.changeEtherBalances(
-        [beanieMarket.address, addrs[2].address], [ONE_ETH.mul(-1), ONE_ETH]);
+        [addrs[2].address], [ONE_ETH]);
 
       addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
 
@@ -636,7 +659,7 @@ describe.only("Market Escrow Offers", function () {
 
   describe("Cancel escrow offer errors", function () {
     it("Address cannot cancel if not offerer, token owner, admin, or past expiry", async function () {
-      const { beanieMarket, dummyNFT, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
+      const { beanieMarket, dummyNFT, weth, owner, addrs, now } = await loadFixture(deployMarketAndMakeEscrowOffersFixture);
 
       let addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
       const addr2offersTail = await addr2offers[addr2offers.length - 1];

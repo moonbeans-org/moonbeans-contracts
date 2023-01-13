@@ -3,18 +3,26 @@ require("dotenv").config();
 require("@openzeppelin/hardhat-upgrades");
 require("@nomiclabs/hardhat-etherscan");
 require("hardhat-gas-reporter");
+require('hardhat-contract-sizer');
 require("solidity-coverage");
 require("@nomicfoundation/hardhat-chai-matchers");
 
 module.exports = {
   solidity: {
-    version: "0.8.14",
-    settings: {
-      optimizer: {
-        enabled: true,
-        runs: 10000
-      }
-    }
+    compilers: [
+      {
+        version: "0.8.14",
+        settings: {
+          optimizer: {
+            enabled: true,
+            runs: 10000
+          }
+        },
+      },
+      {
+        version: "0.4.18",
+      },
+    ]
   },
   networks: {
     mainnet: {
