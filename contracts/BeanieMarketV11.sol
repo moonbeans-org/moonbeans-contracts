@@ -10,6 +10,7 @@ import "@openzeppelin/contracts/interfaces/IERC2981.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 import "./interface/IWETH.sol";
+import "./interface/IBeanFeeProcessor.sol";
 
 import "./BeanUtils.sol";
 
@@ -96,9 +97,6 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
     uint128 constant SMOL_MAX_INT = ~uint128(0);
 
     // Fees are out of 10000, to allow for 0.01 - 9.99% fees.
-    uint256 public devFee = 100; //1%
-    uint256 public beanieHolderFee = 100; //1%
-    uint256 public beanBuybackFee = 100; //1%
     uint256 public defaultCollectionOwnerFee = 0; //0%
     uint256 public totalEscrowedAmount = 0;
 
@@ -106,9 +104,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
     uint256 public accruedAdminFees;
 
     IWETH public TOKEN; //WETH, NOVA
-    address public devAddress = 0x24312a0b911fE2199fbea92efab55e2ECCeC637D;
-    address public beanieHolderAddress = 0xB967DaE501F16E229A83f0C4FeA263A4be528dF4;
-    address public beanBuybackAddress = 0xE9b8258668E17AFA5D09de9F10381dE5565dbDc0;
+    IBeanFeeProcessor public BeanFeeProcessor;
 
     mapping(bytes32 => ListingPos) public posInListings;
     mapping(bytes32 => OfferPos) public posInOffers;
@@ -167,9 +163,10 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         _;
     }
 
-    constructor(address _TOKEN) {
-        administrators[msg.sender] = true;
+    constructor(address _TOKEN, address _BEANFEEPROCESSOR) {
         TOKEN = IWETH(_TOKEN);
+        BeanFeeProcessor = IBeanFeeProcessor(_BEANFEEPROCESSOR);
+        administrators[msg.sender] = true;
         approveSelf();
     }
 
@@ -298,19 +295,13 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         //Fees
         if (feesOn) {
             (
-                uint256 devFeeAmount,
-                uint256 beanieHolderFeeAmount,
-                uint256 beanBuybackFeeAmount,
+                uint256 totalAdminFeeAmount,
                 uint256 collectionOwnerFeeAmount,
                 uint256 saleNetFees
             ) = _calculateAmounts(listing.contractAddress, listing.price);
             _sendEth(originalLister, saleNetFees); // Pay lister
-            _sendEth( collectionOwners[listing.contractAddress], collectionOwnerFeeAmount); // Pay royalties
-            if (autoSendFees) {
-                _processDevFeesEth(devFeeAmount, beanieHolderFeeAmount, beanBuybackFeeAmount);
-            } else {
-                _accrueDevFeesEth(devFeeAmount, beanieHolderFeeAmount, beanBuybackFeeAmount);
-            }
+            _sendEth(collectionOwners[listing.contractAddress], collectionOwnerFeeAmount); // Pay royalties
+            if (autoSendFees) _processDevFeesEth(totalAdminFeeAmount);
         }
         else {
             _sendEth(originalLister, listing.price);
@@ -621,79 +612,19 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
     *   @dev functions for accruing and processing ETH fees.
     */
 
-    // Process accrued ETH fees.
-    function processDevFeesEth() external nonReentrant onlyAdmins() {
-        uint256 denominator = devFee + beanieHolderFee + beanBuybackFee;
-        uint256 devFeeAmount = accruedAdminFeesEth * devFee / denominator;
-        uint256 beanieFeeAmount = accruedAdminFeesEth * beanieHolderFee / denominator;
-        uint256 beanBuybackAmount = ((accruedAdminFeesEth - devFeeAmount) - beanieFeeAmount);
-        accruedAdminFeesEth = 0;
-        _processDevFeesEth(devFeeAmount, beanieFeeAmount, beanBuybackAmount);
-    }
-
-    // Function for accruing ETH fees.
-    function _accrueDevFeesEth(
-        uint256 devAmount,
-        uint256 beanieHolderAmount,
-        uint256 beanBuybackAmount
-    ) private {
-        uint256 accruedFees = devAmount + beanieHolderAmount + beanBuybackAmount;
-        accruedAdminFeesEth += accruedFees;
-    }
-
     // Private function for processing ETH fees. Used in both dev process and auto process.
     function _processDevFeesEth(
-        uint256 devAmount,
-        uint256 beanieHolderAmount,
-        uint256 beanBuybackAmount
+        uint256 amount
     ) private {
-        if (devAmount != 0 )
-            _sendEth(devAddress, devAmount);
-        if (beanieHolderAmount != 0 )
-            _sendEth(beanieHolderAddress, beanieHolderAmount);
-        if (beanBuybackAmount != 0 )
-            _sendEth(beanBuybackAddress, beanBuybackAmount);
-    }
-
-    /**
-        @dev functions for accruing and processing ETH fees.
-    */
-
-    // Process accrued token fees. Deposit 1 wei of payment token for gas savings prior to this.
-    function processDevFeesToken() external nonReentrant onlyAdmins() {
-        uint256 denominator = devFee + beanieHolderFee + beanBuybackFee;
-        uint256 devFeeAmount = accruedAdminFees * devFee / denominator;
-        uint256 beanieFeeAmount = accruedAdminFees * beanieHolderFee / denominator;
-        uint256 beanBuybackAmount = ((accruedAdminFees - devFeeAmount) - beanieFeeAmount);
-        accruedAdminFees = 0;
-        _processDevFeesToken(address(this), devFeeAmount, beanieFeeAmount, beanBuybackAmount);
-    }
-
-    // Function for accruing token fees.
-    function _accrueDevFeesToken(
-        address from,
-        uint256 devAmount,
-        uint256 beanieHolderAmount,
-        uint256 beanBuybackAmount
-    ) private {
-        uint256 accruedFees = devAmount + beanieHolderAmount + beanBuybackAmount;
-        TOKEN.transferFrom(from, address(this), accruedFees);
-        accruedAdminFees += accruedFees;
+        if (amount != 0 ) _sendEth(address(BeanFeeProcessor), amount);
     }
 
     // Private function for processing token fees. Used in both dev process and auto process.
     function _processDevFeesToken(
         address from,
-        uint256 devAmount,
-        uint256 beanieHolderAmount,
-        uint256 beanBuybackAmount
+        uint256 amount
     ) private {
-        if (devAmount != 0 )
-            TOKEN.transferFrom(from, devAddress, devAmount);
-        if (beanieHolderAmount != 0 )
-            TOKEN.transferFrom(from, beanieHolderAddress, beanieHolderAmount);
-        if (beanBuybackAmount != 0 )
-            TOKEN.transferFrom(from, beanBuybackAddress, beanBuybackAmount);
+        if (amount != 0 ) TOKEN.transferFrom(from, address(BeanFeeProcessor), amount);
     }
 
     //---------------------------------
@@ -703,15 +634,6 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
     //---------------------------------
     function getCollectionOwner(address ca) external view returns (address) {
         return collectionOwners[ca];
-    }
-
-    function totalFees() public view returns (uint256) {
-        return (
-            devFee +
-            beanieHolderFee +
-            beanBuybackFee +
-            defaultCollectionOwnerFee
-        );
     }
 
     function checkEscrowAmount(address user) external view returns (uint256) {
@@ -793,21 +715,6 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         collectionOwners[ca] = _owner;
     }
 
-    function setDevFee(uint256 fee) external onlyOwner {
-        require(fee <= 1000, "Max 10% fee");
-        devFee = fee;
-    }
-
-    function setBeanieHolderFee(uint256 fee) external onlyOwner {
-        require(fee <= 1000, "Max 10% fee");
-        beanieHolderFee = fee;
-    }
-
-    function setBeanBuyBackFee(uint256 fee) external onlyOwner {
-        require(fee <= 1000, "Max 10% fee");
-        beanBuybackFee = fee;
-    }
-
     function setCollectionOwnerFee(address ca, uint256 fee) external {
         // Collection owner or contract owner can set fees
         bool verifiedCollectionOwner = collectionOwnersCanSetRoyalties && (_msgSender() == collectionOwners[ca]);
@@ -819,18 +726,6 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
     function setDefaultCollectionOwnerFee(uint256 fee) external onlyOwner {
         require(fee <= 1000, "Max 10% fee");
         defaultCollectionOwnerFee = fee;
-    }
-
-    function setDevAddress(address _address) external onlyOwner {
-        devAddress = _address;
-    }
-
-    function setBeanieHolderAddress(address _address) external onlyOwner {
-        beanieHolderAddress = _address;
-    }
-
-    function setBeanBuybackAddress(address _address) external onlyOwner {
-        beanBuybackAddress = _address;
     }
 
     function setFeesOn(bool _value) external onlyOwner {
@@ -876,29 +771,25 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         return offerHashesByBuyer[offerer];
     }
 
+    function totalAdminFees() public view returns(uint256 totalFee) {
+        totalFee = BeanFeeProcessor.totalFee();
+    }
+
     // PRIVATE HELPERS
     function _calculateAmounts(address ca, uint256 amount)
         private
         view
-        returns (uint256, uint256, uint256, uint256, uint256)
+        returns (uint256, uint256, uint256)
     {
         uint256 _collectionOwnerFee = collectionOwnerFees[ca] == 0
             ? defaultCollectionOwnerFee
             : collectionOwnerFees[ca];
-        uint256 devFeeAmount = (amount * devFee) / 10000;
-        uint256 beanieHolderFeeAmount = (amount * beanieHolderFee) / 10000;
-        uint256 beanBuybackFeeAmount = (amount * beanBuybackFee) / 10000;
-        uint256 collectionOwnerFeeAmount = (amount * _collectionOwnerFee) /
-            10000;
-        uint256 remainder = amount -
-            (devFeeAmount +
-                beanieHolderFeeAmount +
-                beanBuybackFeeAmount +
-                collectionOwnerFeeAmount);
+
+        uint256 totalAdminFee = (amount * totalAdminFees()) / 10000;
+        uint256 collectionOwnerFeeAmount = (amount * _collectionOwnerFee) / 10000;
+        uint256 remainder = amount - (totalAdminFee + collectionOwnerFeeAmount);
         return (
-            devFeeAmount,
-            beanieHolderFeeAmount,
-            beanBuybackFeeAmount,
+            totalAdminFee,
             collectionOwnerFeeAmount,
             remainder
         );
@@ -928,19 +819,13 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         if (feesOn) {
             //calculate fees
             (
-                uint256 devFeeAmount,
-                uint256 beanieHolderFeeAmount,
-                uint256 beanBuybackFeeAmount,
+                uint256 totalAdminFeeAmount,
                 uint256 collectionOwnerFeeAmount,
                 uint256 remainder
             ) = _calculateAmounts(ca, price);
             _sendEth(oldOwner, remainder);
             _sendEth(collectionOwners[ca], collectionOwnerFeeAmount);
-            if (autoSendFees) {
-                _processDevFeesEth(devFeeAmount, beanieHolderFeeAmount, beanBuybackFeeAmount);
-            } else {
-                _accrueDevFeesEth(devFeeAmount, beanieHolderFeeAmount, beanBuybackFeeAmount);
-            }
+            _processDevFeesEth(totalAdminFeeAmount);
         } else {
             _sendEth(oldOwner, price);
         }
@@ -958,19 +843,13 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         //fees
         if (feesOn) {
             (
-                uint256 devFeeAmount,
-                uint256 beanieHolderFeeAmount,
-                uint256 beanBuybackFeeAmount,
+                uint256 totalAdminFeeAmount,
                 uint256 collectionOwnerFeeAmount,
-                uint256 priceNetFees
+                uint256 remainder
             ) = _calculateAmounts(ca, price);
-            TOKEN.transferFrom(newOwner, oldOwner, priceNetFees);
+            TOKEN.transferFrom(newOwner, oldOwner, remainder);
             TOKEN.transferFrom(newOwner, collectionOwners[ca], collectionOwnerFeeAmount);
-            if (autoSendFees) {
-                _processDevFeesToken(newOwner, devFeeAmount, beanieHolderFeeAmount, beanBuybackFeeAmount);
-            } else {
-                _accrueDevFeesToken(newOwner, devFeeAmount, beanieHolderFeeAmount, beanBuybackFeeAmount);
-            }
+            _processDevFeesToken(newOwner, totalAdminFeeAmount);
         } else {
             TOKEN.transferFrom(newOwner, oldOwner, price);
         }
