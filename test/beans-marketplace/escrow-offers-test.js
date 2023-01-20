@@ -10,7 +10,7 @@ function makeBigNum(num) {
     return ethers.BigNumber.from(num);
 }
 
-describe("Market Escrow Offers", function () {
+describe.only("Market Escrow Offers", function () {
   async function deployMarketAndNFTFixture() {
     const [owner, ...addrs] = await ethers.getSigners();
     const admin = addrs[9];
@@ -23,8 +23,12 @@ describe("Market Escrow Offers", function () {
       weth.connect(addrs[i]).deposit({value: ONE_ETH.mul(50)});
     }
 
+    const FeeProcessor = await ethers.getContractFactory("BeanFeeProcessor");
+    const feeProcessor = await FeeProcessor.deploy(weth.address);
+    await feeProcessor.deployed();
+
     const MARKET = await ethers.getContractFactory("BeanieMarketV11");
-    const beanieMarket = await MARKET.deploy(weth.address);
+    const beanieMarket = await MARKET.deploy(weth.address, feeProcessor.address);
     await beanieMarket.deployed();
 
     const NFT = await ethers.getContractFactory("ERC721Mock");
@@ -56,8 +60,12 @@ describe("Market Escrow Offers", function () {
       weth.connect(addrs[i]).deposit({value: ONE_ETH.mul(50)});
     }
 
+    const FeeProcessor = await ethers.getContractFactory("BeanFeeProcessor");
+    const feeProcessor = await FeeProcessor.deploy(weth.address);
+    await feeProcessor.deployed();
+
     const MARKET = await ethers.getContractFactory("BeanieMarketV11");
-    const beanieMarket = await MARKET.deploy(weth.address);
+    const beanieMarket = await MARKET.deploy(weth.address, feeProcessor.address);
     await beanieMarket.deployed();
 
     const NFT = await ethers.getContractFactory("ERC721Mock");
