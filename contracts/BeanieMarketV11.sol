@@ -92,9 +92,10 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         uint256 timestamp
     );
     event EscrowReturned(address indexed user, uint256 indexed price);
+    event CollectionModified(address indexed token, bool indexed enabled, address indexed owner, uint256 collectionOwnerFee, uint256 timestamp);
 
-    uint256 constant MAX_INT = ~uint256(0);
-    uint128 constant SMOL_MAX_INT = ~uint128(0);
+    uint256 public constant MAX_INT = ~uint256(0);
+    uint128 public constant SMOL_MAX_INT = ~uint128(0);
 
     // Fees are out of 10000, to allow for 0.01 - 9.99% fees.
     uint256 public defaultCollectionOwnerFee = 0; //0%
@@ -574,6 +575,8 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
     //
     //---------------------------------
 
+    // Manual functions to only be enabled in case of contract migration, as they will throw off escrowed amount values.
+    // Escrowed funds can always be withdrawn by cancelling placed bids.
     function addFundsToEscrow() external payable nonReentrant {
         if (!usersCanWithdrawEscrow)
             revert BEAN_WithdrawNotEnabled();
@@ -705,14 +708,17 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         collectionTradingEnabled[ca] = tradingEnabled;
         collectionOwners[ca] = royaltyWallet;
         collectionOwnerFees[ca] = fee;
+        emit CollectionModified(ca, tradingEnabled, _royaltyWallet, _fee, block.timestamp);
     }
 
     function setCollectionTrading(address ca, bool value) external onlyAdmins {
         collectionTradingEnabled[ca] = value;
+        emit CollectionModified(ca, value, collectionOwners[ca], collectionOwnerFees[ca], block.timestamp);
     }
 
     function setCollectionOwner(address ca, address _owner) external onlyAdmins {
         collectionOwners[ca] = _owner;
+        emit CollectionModified(ca, collectionTradingEnabled[ca], _owner, collectionOwnerFees[ca], block.timestamp);
     }
 
     function setCollectionOwnerFee(address ca, uint256 fee) external {
@@ -721,6 +727,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         require((_msgSender() == owner()) || verifiedCollectionOwner);
         require(fee <= 1000, "Max 10% fee");
         collectionOwnerFees[ca] = fee;
+        emit CollectionModified(ca, collectionTradingEnabled[ca], collectionOwners[ca], collectionOwnerFees[ca], block.timestamp);
     }
 
     function setDefaultCollectionOwnerFee(uint256 fee) external onlyOwner {
