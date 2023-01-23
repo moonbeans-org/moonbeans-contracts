@@ -12,8 +12,6 @@ import "./BeanUtils.sol";
 import "./interface/IWETH.sol";
 import "./interface/IBeanFeeProcessor.sol";
 
-import "hardhat/console.sol";
-
 error BEAN_NotOwnerOrAdmin();
 error BEAN_TradingPaused();
 error BEAN_CollectionNotEnabled();
