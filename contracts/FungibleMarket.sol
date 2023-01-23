@@ -240,11 +240,18 @@ contract FungibleMarket is ReentrancyGuard, Ownable {
         Trade memory _trade = trades[tradeId];
         if (_trade.price == 0) revert BEAN_OrderDoesNotExist();
 
-        if (
-            _trade.maker != msg.sender &&
-            !administrators[msg.sender] &&
-            _trade.expiry > block.timestamp
-        ) revert BEAN_NotAuthorized();
+        if (_trade.tradeFlags.isEscrowed) {
+            if (
+                _trade.maker != msg.sender &&
+                !administrators[msg.sender]
+            ) revert BEAN_NotAuthorized(); 
+        }   else {
+            if (
+                _trade.maker != msg.sender &&
+                !administrators[msg.sender] &&
+                _trade.expiry > block.timestamp
+            ) revert BEAN_NotAuthorized(); 
+        }
 
         uint256 totalPrice = _trade.price * _trade.quantity;
 

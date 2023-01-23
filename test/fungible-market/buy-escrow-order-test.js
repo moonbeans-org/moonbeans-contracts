@@ -659,26 +659,26 @@ describe("Buy escrow orders", function () {
       await fungibleMarket.connect(owner).cancelTrade(buyOrderToCancel);
     });
 
-    it("Anyone can cancel trade if expiry has passed.", async function () {
-      const { fungibleMarket, token1155, weth, owner, addrs, now } = await loadFixture(deployMarketAndMakeBuyOrderFixture);
+    // it("Anyone can cancel trade if expiry has passed.", async function () {
+    //   const { fungibleMarket, token1155, weth, owner, addrs, now } = await loadFixture(deployMarketAndMakeBuyOrderFixture);
 
-      const buyOrderIds = await fungibleMarket.getBuyOrdersByUser(addrs[2].address);
-      const buyOrderToCancel = buyOrderIds[0];
-      const buyOrderData = await fungibleMarket.trades(buyOrderToCancel)
+    //   const buyOrderIds = await fungibleMarket.getBuyOrdersByUser(addrs[2].address);
+    //   const buyOrderToCancel = buyOrderIds[0];
+    //   const buyOrderData = await fungibleMarket.trades(buyOrderToCancel)
 
-      await expect(fungibleMarket.connect(addrs[5]).cancelTrade(buyOrderToCancel)
-      ).to.be.revertedWithCustomError(fungibleMarket, "BEAN_NotAuthorized");
+    //   await expect(fungibleMarket.connect(addrs[5]).cancelTrade(buyOrderToCancel)
+    //   ).to.be.revertedWithCustomError(fungibleMarket, "BEAN_NotAuthorized");
 
-      await network.provider.send("evm_setNextBlockTimestamp", [Number(buyOrderData.expiry) - 10])
-      await network.provider.send("evm_mine")
+    //   await network.provider.send("evm_setNextBlockTimestamp", [Number(buyOrderData.expiry) - 10])
+    //   await network.provider.send("evm_mine")
 
-      await expect(fungibleMarket.connect(addrs[5]).cancelTrade(buyOrderToCancel)
-      ).to.be.revertedWithCustomError(fungibleMarket, "BEAN_NotAuthorized");
+    //   await expect(fungibleMarket.connect(addrs[5]).cancelTrade(buyOrderToCancel)
+    //   ).to.be.revertedWithCustomError(fungibleMarket, "BEAN_NotAuthorized");
 
-      await network.provider.send("evm_setNextBlockTimestamp", [Number(buyOrderData.expiry) + 10])
-      await network.provider.send("evm_mine")
+    //   await network.provider.send("evm_setNextBlockTimestamp", [Number(buyOrderData.expiry) + 10])
+    //   await network.provider.send("evm_mine")
 
-      await fungibleMarket.connect(addrs[5]).cancelTrade(buyOrderToCancel);
-    });
+    //   await fungibleMarket.connect(addrs[5]).cancelTrade(buyOrderToCancel);
+    // });
   });
 });
