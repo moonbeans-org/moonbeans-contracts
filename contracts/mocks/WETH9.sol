@@ -1,11 +1,3 @@
-/**
- *Submitted for verification at Etherscan.io on 2022-01-13
-*/
-
-/**
- *Submitted for verification at Etherscan.io on 2017-12-12
-*/
-
 // Copyright (C) 2015, 2016, 2017 Dapphub
 
 // This program is free software: you can redistribute it and/or modify

@@ -17,16 +17,20 @@ describe("Sell orders", function () {
     const [owner, ...addrs] = await ethers.getSigners();
     const admin = addrs[9];
 
-    const ERC20 = await ethers.getContractFactory("ERC20Mock");
-    const paymentToken = await ERC20.deploy();
-    await paymentToken.deployed();
+    const WETH = await ethers.getContractFactory("WETH9");
+    const weth = await WETH.deploy();
+    await weth.deployed();
 
-    for (let i = 0; i < 5; i++) {
-      paymentToken.mint(addrs[i].address, ONE_ETH.mul(100));
+    for (let i = 0; i<5; i++) {
+      await weth.connect(addrs[i]).deposit({value: ONE_ETH.mul(50)});
     }
 
+    const FeeProcessor = await ethers.getContractFactory("BeanFeeProcessor");
+    const feeProcessor = await FeeProcessor.deploy(weth.address);
+    await feeProcessor.deployed();
+
     const MARKET = await ethers.getContractFactory("FungibleMarket");
-    const fungibleMarket = await MARKET.deploy(paymentToken.address);
+    const fungibleMarket = await MARKET.deploy(weth.address, feeProcessor.address);
     await fungibleMarket.deployed();
 
     const TOKEN1155 = await ethers.getContractFactory("ERC1155Mock");
@@ -45,23 +49,27 @@ describe("Sell orders", function () {
     const block = await ethers.provider.getBlock();
     const now = block['timestamp']
 
-    return { fungibleMarket, token1155, paymentToken, owner, admin, addrs, now };
+    return { fungibleMarket, feeProcessor, token1155, weth, owner, admin, addrs, now };
   }
 
   async function deployMarketAndMakeSellOrderFixture() {
     const [owner, ...addrs] = await ethers.getSigners();
     const admin = addrs[9];
 
-    const ERC20 = await ethers.getContractFactory("ERC20Mock");
-    const paymentToken = await ERC20.deploy();
-    await paymentToken.deployed();
+    const WETH = await ethers.getContractFactory("WETH9");
+    const weth = await WETH.deploy();
+    await weth.deployed();
 
-    for (let i = 0; i < 5; i++) {
-      paymentToken.mint(addrs[i].address, ONE_ETH.mul(100));
+    for (let i = 0; i<5; i++) {
+      await weth.connect(addrs[i]).deposit({value: ONE_ETH.mul(50)});
     }
 
+    const FeeProcessor = await ethers.getContractFactory("BeanFeeProcessor");
+    const feeProcessor = await FeeProcessor.deploy(weth.address);
+    await feeProcessor.deployed();
+
     const MARKET = await ethers.getContractFactory("FungibleMarket");
-    const fungibleMarket = await MARKET.deploy(paymentToken.address);
+    const fungibleMarket = await MARKET.deploy(weth.address, feeProcessor.address);
     await fungibleMarket.deployed();
 
     const TOKEN1155 = await ethers.getContractFactory("ERC1155Mock");
@@ -100,15 +108,16 @@ describe("Sell orders", function () {
     const orderData = await Promise.all(promises);
     const orderHashes = orderData.map(data => data.logs[0].topics[1]);
 
-    return { fungibleMarket, token1155, paymentToken, owner, addrs, now, orderHashes };
+    return { fungibleMarket, feeProcessor, token1155, weth, owner, addrs, now, orderHashes };
   }
 
   describe("Deployment", function () {
     it("Deployment", async function () {
-      const { fungibleMarket, token1155, paymentToken, owner, addrs } = await loadFixture(deployMarketAndNFTFixture);
-      expect(await fungibleMarket.TOKEN()).to.equal(paymentToken.address);
+      const { fungibleMarket, feeProcessor, token1155, weth, owner, addrs } = await loadFixture(deployMarketAndNFTFixture);
+      expect(await fungibleMarket.TOKEN()).to.equal(weth.address);
       expect(await token1155.balanceOf(addrs[0].address, 1)).to.eql(ethers.BigNumber.from(10));
       expect(await token1155.balanceOf(addrs[0].address, 11)).to.eql(ethers.BigNumber.from(0));
+      expect(await fungibleMarket.BeanFeeProcessor()).to.equal(feeProcessor.address);
     });
   })
 
@@ -156,6 +165,74 @@ describe("Sell orders", function () {
           ]
         ]
       )
+    });
+
+    it("Can fulfill sell order full order and partial orders disabled", async function () {
+      const { fungibleMarket, token1155, owner, addrs, now } = await loadFixture(deployMarketAndNFTFixture);
+  
+      await token1155.connect(addrs[0]).mint(addrs[0].address, 1, 10);
+      await token1155.connect(addrs[1]).mint(addrs[1].address, 1, 10);
+      await token1155.connect(addrs[0]).mint(addrs[0].address, 2, 10);
+      await token1155.connect(addrs[1]).mint(addrs[1].address, 2, 10);
+  
+      await fungibleMarket.connect(owner).setCollectionOwner(token1155.address, addrs[5].address);;
+      await fungibleMarket.connect(owner).setCollectionOwnerFee(token1155.address, 100); //1% fee
+  
+      await token1155.connect(addrs[0]).setApprovalForAll(fungibleMarket.address, true);
+      await token1155.connect(addrs[1]).setApprovalForAll(fungibleMarket.address, true);
+  
+      const tradeFlags = {
+        tradeType: 1,
+        allowPartialFills: false,
+        isEscrowed: false
+      }
+      await fungibleMarket.connect(addrs[0]).openTrade(token1155.address, 1, 1, ONE_ETH, now + 100, tradeFlags);
+      await fungibleMarket.connect(addrs[0]).openTrade(token1155.address, 1, 2, ONE_ETH, now + 1000, tradeFlags);
+      await fungibleMarket.connect(addrs[0]).openTrade(token1155.address, 2, 3, ONE_ETH, now + 1000, tradeFlags);
+      await fungibleMarket.connect(addrs[0]).openTrade(token1155.address, 2, 4, ONE_ETH, now + 1000, tradeFlags);
+      await fungibleMarket.connect(addrs[1]).openTrade(token1155.address, 1, 5, ONE_ETH, now + 10000, tradeFlags);
+
+      const sellOrderIds = await fungibleMarket.getSellOrdersByUser(addrs[0].address);
+      const sellOrderToFulfill = sellOrderIds[1];
+      const listingData = await fungibleMarket.trades(sellOrderToFulfill);
+
+      await fungibleMarket.connect(addrs[5]).acceptTrade(
+        sellOrderToFulfill, 2, { value: listingData.price.mul(2) })
+    });
+
+    it("Cannot fulfill sell order if not taking full order and partial orders disabled", async function () {
+      const { fungibleMarket, token1155, owner, addrs, now } = await loadFixture(deployMarketAndNFTFixture);
+  
+      await token1155.connect(addrs[0]).mint(addrs[0].address, 1, 10);
+      await token1155.connect(addrs[1]).mint(addrs[1].address, 1, 10);
+      await token1155.connect(addrs[0]).mint(addrs[0].address, 2, 10);
+      await token1155.connect(addrs[1]).mint(addrs[1].address, 2, 10);
+  
+      await fungibleMarket.connect(owner).setCollectionOwner(token1155.address, addrs[5].address);;
+      await fungibleMarket.connect(owner).setCollectionOwnerFee(token1155.address, 100); //1% fee
+  
+      await token1155.connect(addrs[0]).setApprovalForAll(fungibleMarket.address, true);
+      await token1155.connect(addrs[1]).setApprovalForAll(fungibleMarket.address, true);
+  
+      const tradeFlags = {
+        tradeType: 1,
+        allowPartialFills: false,
+        isEscrowed: false
+      }
+      await fungibleMarket.connect(addrs[0]).openTrade(token1155.address, 1, 1, ONE_ETH, now + 100, tradeFlags);
+      await fungibleMarket.connect(addrs[0]).openTrade(token1155.address, 1, 2, ONE_ETH, now + 1000, tradeFlags);
+      await fungibleMarket.connect(addrs[0]).openTrade(token1155.address, 2, 3, ONE_ETH, now + 1000, tradeFlags);
+      await fungibleMarket.connect(addrs[0]).openTrade(token1155.address, 2, 4, ONE_ETH, now + 1000, tradeFlags);
+      await fungibleMarket.connect(addrs[1]).openTrade(token1155.address, 1, 5, ONE_ETH, now + 10000, tradeFlags);
+
+      const sellOrderIds = await fungibleMarket.getSellOrdersByUser(addrs[0].address);
+      const sellOrderToFulfill = sellOrderIds[1];
+      const listingData = await fungibleMarket.trades(sellOrderToFulfill);
+
+      await expect(fungibleMarket.connect(addrs[5]).acceptTrade(
+        sellOrderToFulfill, 1, { value: listingData.price })
+      ).to.be.revertedWithCustomError(fungibleMarket, "BEAN_TradeNotParitalFill");
+
     });
   });
 
@@ -366,21 +443,21 @@ describe("Sell orders", function () {
     });
 
     it("Fulfill sell order feesOn sends correct eth amount, autosend on", async function () {
-      const { fungibleMarket, token1155, owner, addrs, now } = await loadFixture(deployMarketAndMakeSellOrderFixture);
-      await fungibleMarket.connect(owner).setAutoSendFees(true);
+      const { fungibleMarket, feeProcessor, token1155, owner, addrs, now } = await loadFixture(deployMarketAndMakeSellOrderFixture);
+      await feeProcessor.connect(owner).setAutoSendFees(true);
 
       const sellOrderIds = await fungibleMarket.getSellOrdersByUser(addrs[0].address);
       const sellOrderToFulfill = sellOrderIds[1];
 
-      const devFee = await fungibleMarket.devFee();
-      const beanieHolderFee = await fungibleMarket.beanieHolderFee();
-      const beanBuybackFee = await fungibleMarket.beanBuybackFee();
+      const devFee = await feeProcessor.devFee();
+      const beanieHolderFee = await feeProcessor.beanieHolderFee();
+      const beanBuybackFee = await feeProcessor.beanBuybackFee();
       const collectionOwnerFee = await fungibleMarket.getCollectionFee(token1155.address);
       const totalFee = devFee.add(beanieHolderFee).add(beanBuybackFee).add(collectionOwnerFee);
 
-      const devAddress = await fungibleMarket.devAddress();
-      const beanHolderAddress = await fungibleMarket.beanieHolderAddress();
-      const beanBuybackAddress = await fungibleMarket.beanBuybackAddress();
+      const devAddress = await feeProcessor.devAddress();
+      const beanHolderAddress = await feeProcessor.beanieHolderAddress();
+      const beanBuybackAddress = await feeProcessor.beanBuybackAddress();
       const collectionOwnerAddress = await fungibleMarket.getCollectionOwner(token1155.address);
 
       // let oldOwnerBalanceBefore = await addrs[0].getBalance();
@@ -401,25 +478,23 @@ describe("Sell orders", function () {
     });
 
     it("Fulfill sell order feesOn sends correct token amount, autosend off and then process", async function () {
-      const { fungibleMarket, token1155, owner, addrs, now } = await loadFixture(deployMarketAndMakeSellOrderFixture);
+      const { fungibleMarket, feeProcessor, token1155, owner, addrs, now } = await loadFixture(deployMarketAndMakeSellOrderFixture);
 
-      expect(await fungibleMarket.accruedAdminFeesEth()).to.eql(bigNum(0));
-
-      await fungibleMarket.connect(owner).setAutoSendFees(false);
+      await feeProcessor.connect(owner).setAutoSendFees(false);
       const sellOrderIds = await fungibleMarket.getSellOrdersByUser(addrs[0].address);
       const sellOrderToFulfill = sellOrderIds[1];
 
       //Get fee percentages
-      const devFee = await fungibleMarket.devFee();
-      const beanieHolderFee = await fungibleMarket.beanieHolderFee();
-      const beanBuybackFee = await fungibleMarket.beanBuybackFee();
+      const devFee = await feeProcessor.devFee();
+      const beanieHolderFee = await feeProcessor.beanieHolderFee();
+      const beanBuybackFee = await feeProcessor.beanBuybackFee();
       const collectionOwnerFee = await fungibleMarket.getCollectionFee(token1155.address);
-      const accruedAdminFees = devFee.add(beanieHolderFee).add(beanBuybackFee);
-      const totalFee = accruedAdminFees.add(collectionOwnerFee);
+      const totalAdminFee = await fungibleMarket.totalAdminFees();
+      const totalFee = totalAdminFee.add(collectionOwnerFee);
 
-      const devAddress = await fungibleMarket.devAddress();
-      const beanHolderAddress = await fungibleMarket.beanieHolderAddress();
-      const beanBuybackAddress = await fungibleMarket.beanBuybackAddress();
+      const devAddress = await feeProcessor.devAddress();
+      const beanHolderAddress = await feeProcessor.beanieHolderAddress();
+      const beanBuybackAddress = await feeProcessor.beanBuybackAddress();
       const collectionOwnerAddress = await fungibleMarket.getCollectionOwner(token1155.address);
 
       let devFeeAmount = ONE_ETH.mul(2).mul(devFee).div(10000);
@@ -430,16 +505,14 @@ describe("Sell orders", function () {
 
       await expect(fungibleMarket.connect(addrs[1]).acceptTrade(sellOrderToFulfill, 2, { value: ONE_ETH.mul(2) }))
         .to.changeEtherBalances(
-          [addrs[0].address, addrs[1].address, devAddress, beanHolderAddress, beanBuybackAddress, collectionOwnerAddress, fungibleMarket.address],
-          [ONE_ETH.mul(2).sub(afterFeePrice), ONE_ETH.mul(-2), 0, 0, 0, collectionOwnerFeeAmount, ONE_ETH.mul(2).mul(accruedAdminFees).div(10000)]
+          [addrs[0].address, addrs[1].address, devAddress, beanHolderAddress, beanBuybackAddress, collectionOwnerAddress, feeProcessor.address],
+          [ONE_ETH.mul(2).sub(afterFeePrice), ONE_ETH.mul(-2), 0, 0, 0, collectionOwnerFeeAmount, ONE_ETH.mul(2).mul(totalAdminFee).div(10000)]
         );
 
-      expect(await fungibleMarket.accruedAdminFeesEth()).to.eql(ONE_ETH.mul(2).mul(accruedAdminFees).div(10000));
-
-      await expect(fungibleMarket.connect(owner).processDevFeesEth())
+      await expect(feeProcessor.connect(owner).processDevFeesEth())
         .to.changeEtherBalances(
-          [addrs[0].address, addrs[1].address, devAddress, beanHolderAddress, beanBuybackAddress, collectionOwnerAddress, fungibleMarket.address],
-          [0, 0, devFeeAmount, beanieHolderFeeAmount, beanBuybackFeeAmount, 0, ONE_ETH.mul(2).mul(accruedAdminFees).div(10000).mul(-1)]
+          [addrs[0].address, addrs[1].address, devAddress, beanHolderAddress, beanBuybackAddress, collectionOwnerAddress, feeProcessor.address],
+          [0, 0, devFeeAmount, beanieHolderFeeAmount, beanBuybackFeeAmount, 0, ONE_ETH.mul(2).mul(totalAdminFee).div(10000).mul(-1)]
         );
 
     });
@@ -466,65 +539,11 @@ describe("Sell orders", function () {
       //Check to see if new listingsByLister and listingsByContract is correct
       expect(await fungibleMarket.trades(sellOrderToDelist)).to.eql(EMPTY_TRADE);
     });
-
-    it("Can fulfill sell order full order and partial orders disabled", async function () {
-      const [owner, ...addrs] = await ethers.getSigners();
-      const admin = addrs[9];
-  
-      const ERC20 = await ethers.getContractFactory("ERC20Mock");
-      const paymentToken = await ERC20.deploy();
-      await paymentToken.deployed();
-  
-      for (let i = 0; i < 5; i++) {
-        paymentToken.mint(addrs[i].address, ONE_ETH.mul(100));
-      }
-  
-      const MARKET = await ethers.getContractFactory("FungibleMarket");
-      const fungibleMarket = await MARKET.deploy(paymentToken.address);
-      await fungibleMarket.deployed();
-  
-      const TOKEN1155 = await ethers.getContractFactory("ERC1155Mock");
-      const token1155 = await TOKEN1155.deploy();
-      await token1155.deployed();
-  
-      await token1155.connect(addrs[0]).mint(addrs[0].address, 1, 10);
-      await token1155.connect(addrs[1]).mint(addrs[1].address, 1, 10);
-      await token1155.connect(addrs[0]).mint(addrs[0].address, 2, 10);
-      await token1155.connect(addrs[1]).mint(addrs[1].address, 2, 10);
-  
-      await fungibleMarket.connect(owner).setCollectionTrading(token1155.address, true);
-      await fungibleMarket.connect(owner).setCollectionOwner(token1155.address, addrs[5].address);;
-      await fungibleMarket.connect(owner).setCollectionOwnerFee(token1155.address, 100); //1% fee
-  
-      const block = await ethers.provider.getBlock();
-      const now = block['timestamp']
-  
-      await token1155.connect(addrs[0]).setApprovalForAll(fungibleMarket.address, true);
-      await token1155.connect(addrs[1]).setApprovalForAll(fungibleMarket.address, true);
-  
-      const tradeFlags = {
-        tradeType: 1,
-        allowPartialFills: false,
-        isEscrowed: false
-      }
-      await fungibleMarket.connect(addrs[0]).openTrade(token1155.address, 1, 1, ONE_ETH, now + 100, tradeFlags);
-      await fungibleMarket.connect(addrs[0]).openTrade(token1155.address, 1, 2, ONE_ETH, now + 1000, tradeFlags);
-      await fungibleMarket.connect(addrs[0]).openTrade(token1155.address, 2, 3, ONE_ETH, now + 1000, tradeFlags);
-      await fungibleMarket.connect(addrs[0]).openTrade(token1155.address, 2, 4, ONE_ETH, now + 1000, tradeFlags);
-      await fungibleMarket.connect(addrs[1]).openTrade(token1155.address, 1, 5, ONE_ETH, now + 10000, tradeFlags);
-
-      const sellOrderIds = await fungibleMarket.getSellOrdersByUser(addrs[0].address);
-      const sellOrderToFulfill = sellOrderIds[1];
-      const listingData = await fungibleMarket.trades(sellOrderToFulfill);
-
-      await fungibleMarket.connect(addrs[5]).acceptTrade(
-        sellOrderToFulfill, 2, { value: listingData.price.mul(2) })
-    });
   });
 
   describe("Fulfill sell order token errors", function () {
     it("Cannot fulfill sell order for an unlisted token", async function () {
-      const { fungibleMarket, token1155, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeSellOrderFixture);
+      const { fungibleMarket, token1155, weth, owner, addrs, now } = await loadFixture(deployMarketAndMakeSellOrderFixture);
       await expect(fungibleMarket.connect(addrs[5]).acceptTrade(ethers.utils.hexZeroPad(0x2, 32), addrs[5].address)
       ).to.be.revertedWithCustomError(fungibleMarket, "BEAN_CollectionNotEnabled");
     });
@@ -569,67 +588,11 @@ describe("Sell orders", function () {
         sellOrderToFulfill, 1, { value: listingData.price })
       ).to.be.revertedWithCustomError(fungibleMarket, "BEAN_NotEnoughTokensToFulfull");
     });
-
-    it("Cannot fulfill sell order if not taking full order and partial orders disabled", async function () {
-      const [owner, ...addrs] = await ethers.getSigners();
-      const admin = addrs[9];
-  
-      const ERC20 = await ethers.getContractFactory("ERC20Mock");
-      const paymentToken = await ERC20.deploy();
-      await paymentToken.deployed();
-  
-      for (let i = 0; i < 5; i++) {
-        paymentToken.mint(addrs[i].address, ONE_ETH.mul(100));
-      }
-  
-      const MARKET = await ethers.getContractFactory("FungibleMarket");
-      const fungibleMarket = await MARKET.deploy(paymentToken.address);
-      await fungibleMarket.deployed();
-  
-      const TOKEN1155 = await ethers.getContractFactory("ERC1155Mock");
-      const token1155 = await TOKEN1155.deploy();
-      await token1155.deployed();
-  
-      await token1155.connect(addrs[0]).mint(addrs[0].address, 1, 10);
-      await token1155.connect(addrs[1]).mint(addrs[1].address, 1, 10);
-      await token1155.connect(addrs[0]).mint(addrs[0].address, 2, 10);
-      await token1155.connect(addrs[1]).mint(addrs[1].address, 2, 10);
-  
-      await fungibleMarket.connect(owner).setCollectionTrading(token1155.address, true);
-      await fungibleMarket.connect(owner).setCollectionOwner(token1155.address, addrs[5].address);;
-      await fungibleMarket.connect(owner).setCollectionOwnerFee(token1155.address, 100); //1% fee
-  
-      const block = await ethers.provider.getBlock();
-      const now = block['timestamp']
-  
-      await token1155.connect(addrs[0]).setApprovalForAll(fungibleMarket.address, true);
-      await token1155.connect(addrs[1]).setApprovalForAll(fungibleMarket.address, true);
-  
-      const tradeFlags = {
-        tradeType: 1,
-        allowPartialFills: false,
-        isEscrowed: false
-      }
-      await fungibleMarket.connect(addrs[0]).openTrade(token1155.address, 1, 1, ONE_ETH, now + 100, tradeFlags);
-      await fungibleMarket.connect(addrs[0]).openTrade(token1155.address, 1, 2, ONE_ETH, now + 1000, tradeFlags);
-      await fungibleMarket.connect(addrs[0]).openTrade(token1155.address, 2, 3, ONE_ETH, now + 1000, tradeFlags);
-      await fungibleMarket.connect(addrs[0]).openTrade(token1155.address, 2, 4, ONE_ETH, now + 1000, tradeFlags);
-      await fungibleMarket.connect(addrs[1]).openTrade(token1155.address, 1, 5, ONE_ETH, now + 10000, tradeFlags);
-
-      const sellOrderIds = await fungibleMarket.getSellOrdersByUser(addrs[0].address);
-      const sellOrderToFulfill = sellOrderIds[1];
-      const listingData = await fungibleMarket.trades(sellOrderToFulfill);
-
-      await expect(fungibleMarket.connect(addrs[5]).acceptTrade(
-        sellOrderToFulfill, 1, { value: listingData.price })
-      ).to.be.revertedWithCustomError(fungibleMarket, "BEAN_TradeNotParitalFill");
-
-    });
   })
 
   describe("Cancel trade errors and delist cases", function () { // works, fixtures just break -- hh problem
     it("Cannot cancel trade if not maker", async function () {
-      const { fungibleMarket, token1155, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeSellOrderFixture);
+      const { fungibleMarket, token1155, weth, owner, addrs, now } = await loadFixture(deployMarketAndMakeSellOrderFixture);
 
       const sellOrderIds = await fungibleMarket.getSellOrdersByUser(addrs[0].address);
       const sellOrderToCancel = sellOrderIds[0];
@@ -639,7 +602,7 @@ describe("Sell orders", function () {
     });
 
     it("Can cancel trade if caller is aonlydmin", async function () {
-      const { fungibleMarket, token1155, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeSellOrderFixture);
+      const { fungibleMarket, token1155, weth, owner, addrs, now } = await loadFixture(deployMarketAndMakeSellOrderFixture);
 
       const sellOrderIds = await fungibleMarket.getSellOrdersByUser(addrs[0].address);
       const sellOrderToCancel = sellOrderIds[0];
@@ -648,7 +611,7 @@ describe("Sell orders", function () {
     });
 
     it("Anyone can cancel trade if expiry has passed.", async function () {
-      const { fungibleMarket, token1155, paymentToken, owner, addrs, now } = await loadFixture(deployMarketAndMakeSellOrderFixture);
+      const { fungibleMarket, token1155, weth, owner, addrs, now } = await loadFixture(deployMarketAndMakeSellOrderFixture);
 
       const sellOrderIds = await fungibleMarket.getSellOrdersByUser(addrs[0].address);
       const sellOrderToCancel = sellOrderIds[0];

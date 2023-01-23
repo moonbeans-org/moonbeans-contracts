@@ -9,6 +9,11 @@ import "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "./BeanUtils.sol";
 
+import "./interface/IWETH.sol";
+import "./interface/IBeanFeeProcessor.sol";
+
+import "hardhat/console.sol";
+
 error BEAN_NotOwnerOrAdmin();
 error BEAN_TradingPaused();
 error BEAN_CollectionNotEnabled();
@@ -35,6 +40,7 @@ error BEAN_AmountOverQuantity();
 error BEAN_NotEnoughTokensToFulfull();
 error BEAN_SellFulfillUnderfunded();
 error BEAN_BuyOrderWithValue(); //TODO: Test
+error BEAN_TransferFailed();
 
 // Escrow
 error BEAN_EscrowOverWithdraw();
@@ -88,33 +94,17 @@ contract FungibleMarket is ReentrancyGuard, Ownable {
     uint128 constant SMOLLER_MAX_INT = ~uint64(0);
 
     // Fees are out of 1000, to allow for 0.1% stepped fees.
-    uint256 public devFee = 100; //1%
-    uint256 public beanieHolderFee = 100; //1%
-    uint256 public beanBuybackFee = 100; //1%
     uint256 public defaultCollectionOwnerFee; //0%
     uint256 public totalEscrowedAmount;
     uint256 public nonce = 1;
 
-    uint256 public accruedAdminFeesEth;
-    uint256 public accruedAdminFees;
-
-    IERC20 public TOKEN; //WETH/WMOVR/WGLMR/WHATEVER
-    address public devAddress = 0x24312a0b911fE2199fbea92efab55e2ECCeC637D;
-    address public beanieHolderAddress =
-        0xdA6367C6510d8f2D20A345888f9Dff3eb3226B02;
-    address public beanBuybackAddress =
-        0xE9b8258668E17AFA5D09de9F10381dE5565dbDc0;
+    IWETH public TOKEN; //WETH, NOVA
+    IBeanFeeProcessor public BeanFeeProcessor;
 
     enum TradeType {
         BUY,
         SELL
     }
-
-    // enum Status {
-    //     OPEN,
-    //     ACCEPTED,
-    //     CANCELLED
-    // }
 
     struct TradeFlags {
         TradeType tradeType;
@@ -133,31 +123,15 @@ contract FungibleMarket is ReentrancyGuard, Ownable {
         TradeFlags tradeFlags;
     }
 
-    /**
-      Trade Flags via bitmask
-      0 - buy order/sell order
-      1 - allow partial fills
-      2 - is escrowed buy order
-    */
-
-    /**
-      Global processing flags via bitmask
-      0 - trading paused
-      1 - fees on
-      2 - collection owners can set royalties
-      3 - use deadliens
-    */
-
     bool public tradingPaused = false;
     bool public feesOn = true;
     bool public collectionOwnersCanSetRoyalties = true;
     bool public useDeadlines = false;
-    bool public autoSendFees = true;
 
     mapping(address => bool) public collectionTradingEnabled;
     mapping(address => address) public collectionOwners;
-    mapping(address => uint256) public totalInEscrow;
     mapping(address => uint256) public collectionOwnerFees;
+    mapping(address => uint256) public totalInEscrow;
     mapping(address => bool) public administrators;
 
     mapping(bytes32 => Trade) public trades;
@@ -172,10 +146,10 @@ contract FungibleMarket is ReentrancyGuard, Ownable {
         orderHashes = buyOrdersByUser[user];
     }
 
-    constructor(address _token) {
-        TOKEN = IERC20(_token);
+    constructor(address _token, address _beanFeeProcessor) {
+        TOKEN = IWETH(_token);
+        BeanFeeProcessor = IBeanFeeProcessor(_beanFeeProcessor);
         administrators[msg.sender] = true;
-        approveSelf();
     }
 
     modifier onlyAdmins() {
@@ -337,11 +311,7 @@ contract FungibleMarket is ReentrancyGuard, Ownable {
             amount,
             ""
         );
-        if (feesOn) {
-            _processPaymentFeesEth(seller, _trade.ca, totalPrice);
-        } else {
-            _sendEth(seller, totalPrice);
-        }
+        _processFees(_trade.ca, totalPrice, seller);
     }
 
     //TODO: Consider a refactor to make escrow and non-escrow arms less interwoven.
@@ -360,18 +330,18 @@ contract FungibleMarket is ReentrancyGuard, Ownable {
             revert BEAN_ContractNotApproved();
         if (IERC1155(_trade.ca).balanceOf(seller, _trade.tokenId) < amount)
             revert BEAN_NotEnoughTokensToFulfull();
+        if (TOKEN.balanceOf(_trade.maker) < totalPrice)
+            revert BEAN_NotEnoughMakerFunds();
 
         if (_trade.tradeFlags.isEscrowed)
             if (totalInEscrow[_trade.maker] < totalPrice)
                 revert BEAN_NotEnoughInEscrow();
             else if (TOKEN.allowance(_trade.maker, address(this)) < totalPrice)
                 revert BEAN_NotEnoughSellerAllowance();
-        if (TOKEN.balanceOf(_trade.maker) < totalPrice)
-            revert BEAN_NotEnoughMakerFunds();
 
         if (_trade.tradeFlags.isEscrowed) {
             totalEscrowedAmount -= totalPrice;
-            totalInEscrow[msg.sender] -= totalPrice;
+            totalInEscrow[purchaser] -= totalPrice;
         }
 
         uint256 remainingQuantity = _trade.quantity - amount;
@@ -390,24 +360,14 @@ contract FungibleMarket is ReentrancyGuard, Ownable {
             amount,
             ""
         );
-
+        
         if (_trade.tradeFlags.isEscrowed) {
-            if (feesOn) {
-                _processPaymentFeesEth(seller, _trade.ca, totalPrice);
-            } else {
-                _sendEth(seller, amount);
-            }
+            _processFees(_trade.ca, totalPrice, seller);
         } else {
-            if (feesOn) {
-                _processPaymentFeesToken(
-                    purchaser,
-                    seller,
-                    _trade.ca,
-                    totalPrice
-                );
-            } else {
-                IERC20(TOKEN).transferFrom(purchaser, seller, totalPrice);
-            }
+            bool success = TOKEN.transferFrom(purchaser, address(this), totalPrice);
+            if (!success) revert BEAN_TransferFailed();
+            TOKEN.withdraw(totalPrice);
+            _processFees(_trade.ca, totalPrice, seller);
         }
     }
 
@@ -432,10 +392,10 @@ contract FungibleMarket is ReentrancyGuard, Ownable {
         // Handle escrowed or non-escrowed buy order checks.
         uint256 totalPrice = _trade.price * amount;
 
-        (address seller, address purchaser) = (_trade.tradeFlags.tradeType ==
-            TradeType.SELL)
-            ? (_trade.maker, msg.sender)
-            : (msg.sender, _trade.maker);
+        (address seller, address purchaser) = 
+            (_trade.tradeFlags.tradeType == TradeType.SELL)
+                ? (_trade.maker, msg.sender)
+                : (msg.sender, _trade.maker);
 
         if (_trade.tradeFlags.tradeType == TradeType.SELL) {
             _fulfillSellOrder(
@@ -514,166 +474,24 @@ contract FungibleMarket is ReentrancyGuard, Ownable {
       );
     }
 
-    function _processPaymentFeesEth(
-        address seller,
+    function _processFees(
         address ca,
-        uint256 amount
-    ) internal {
-        //Calculate fees and amounts, update Trade state.
-        (
-            uint256 devFeeAmount,
-            uint256 beanieHolderFeeAmount,
-            uint256 beanBuybackFeeAmount,
-            uint256 collectionOwnerFeeAmount,
-            uint256 remainder
-        ) = calculateAmounts(ca, amount);
-        if (autoSendFees) {
-            _processDevFeesEth(
-                devFeeAmount,
-                beanieHolderFeeAmount,
-                beanBuybackFeeAmount
-            );
+        uint256 amount,
+        address oldOwner
+    ) private {
+        if (feesOn) {
+            //calculate fees
+            (
+                uint256 totalAdminFeeAmount,
+                uint256 collectionOwnerFeeAmount,
+                uint256 remainder
+            ) = _calculateAmounts(ca, amount);
+            _sendEth(oldOwner, remainder);
+            _sendEth(collectionOwners[ca], collectionOwnerFeeAmount);
+            _sendEth(address(BeanFeeProcessor), totalAdminFeeAmount);
         } else {
-            _accrueDevFeesEth(
-                devFeeAmount,
-                beanieHolderFeeAmount,
-                beanBuybackFeeAmount
-            );
+            _sendEth(oldOwner, amount);
         }
-        _sendEth(collectionOwners[ca], collectionOwnerFeeAmount);
-        _sendEth(seller, remainder);
-    }
-
-    // Private function for processing ETH fees. Used in both dev process and auto process.
-    function _processDevFeesEth(
-        uint256 devAmount,
-        uint256 beanieHolderAmount,
-        uint256 beanBuybackAmount
-    ) private {
-        if (devAmount != 0) _sendEth(devAddress, devAmount);
-        if (beanieHolderAmount != 0)
-            _sendEth(beanieHolderAddress, beanieHolderAmount);
-        if (beanBuybackAmount != 0)
-            _sendEth(beanBuybackAddress, beanBuybackAmount);
-    }
-
-    function _accrueDevFeesEth(
-        uint256 devAmount,
-        uint256 beanieHolderAmount,
-        uint256 beanBuybackAmount
-    ) private {
-        uint256 accruedFees = devAmount +
-            beanieHolderAmount +
-            beanBuybackAmount;
-        accruedAdminFeesEth += accruedFees;
-    }
-
-    // Process accrued ETH fees.
-    function processDevFeesEth() external nonReentrant onlyAdmins {
-        uint256 denominator = devFee + beanieHolderFee + beanBuybackFee;
-        uint256 devFeeAmount = (accruedAdminFeesEth * devFee) / denominator;
-        uint256 beanieFeeAmount = (accruedAdminFeesEth * beanieHolderFee) /
-            denominator;
-        uint256 beanBuybackAmount = ((accruedAdminFeesEth - devFeeAmount) -
-            beanieFeeAmount);
-        accruedAdminFeesEth = 0;
-        _processDevFeesEth(devFeeAmount, beanieFeeAmount, beanBuybackAmount);
-    }
-
-    /**
-        @dev functions for accruing and processing ETH fees.
-    */
-
-    function _processPaymentFeesToken(
-        address purchaser,
-        address seller,
-        address ca,
-        uint256 amount
-    ) internal {
-        //Calculate fees and amounts, update Trade state.
-        (
-            uint256 devFeeAmount,
-            uint256 beanieHolderFeeAmount,
-            uint256 beanBuybackFeeAmount,
-            uint256 collectionOwnerFeeAmount,
-            uint256 remainder
-        ) = calculateAmounts(ca, amount);
-        if (autoSendFees) {
-            _processDevFeesToken(
-                purchaser,
-                devFeeAmount,
-                beanieHolderFeeAmount,
-                beanBuybackFeeAmount
-            );
-        } else {
-            _accrueDevFeesToken(
-                purchaser,
-                devFeeAmount,
-                beanieHolderFeeAmount,
-                beanBuybackFeeAmount
-            );
-        }
-        IERC20 _token = IERC20(TOKEN);
-        _token.transferFrom(purchaser, seller, remainder);
-        _token.transferFrom(
-            purchaser,
-            collectionOwners[ca],
-            collectionOwnerFeeAmount
-        );
-    }
-
-    // Function for accruing token fees.
-    function _accrueDevFeesToken(
-        address from,
-        uint256 devAmount,
-        uint256 beanieHolderAmount,
-        uint256 beanBuybackAmount
-    ) private {
-        uint256 accruedFees = devAmount +
-            beanieHolderAmount +
-            beanBuybackAmount;
-        IERC20(TOKEN).transferFrom(from, address(this), accruedFees);
-        accruedAdminFees += accruedFees;
-    }
-
-    // Private function for processing token fees. Used in both dev process and auto process.
-    function _processDevFeesToken(
-        address from,
-        uint256 devAmount,
-        uint256 beanieHolderAmount,
-        uint256 beanBuybackAmount
-    ) private {
-        if (devAmount != 0)
-            IERC20(TOKEN).transferFrom(from, devAddress, devAmount);
-        if (beanieHolderAmount != 0)
-            IERC20(TOKEN).transferFrom(
-                from,
-                beanieHolderAddress,
-                beanieHolderAmount
-            );
-        if (beanBuybackAmount != 0)
-            IERC20(TOKEN).transferFrom(
-                from,
-                beanBuybackAddress,
-                beanBuybackAmount
-            );
-    }
-
-    // Process accrued token fees. Deposit 1 wei of payment token for gas savings prior to this.
-    function processDevFeesToken() external nonReentrant onlyAdmins {
-        uint256 denominator = devFee + beanieHolderFee + beanBuybackFee;
-        uint256 devFeeAmount = (accruedAdminFees * devFee) / denominator;
-        uint256 beanieFeeAmount = (accruedAdminFees * beanieHolderFee) /
-            denominator;
-        uint256 beanBuybackAmount = ((accruedAdminFees - devFeeAmount) -
-            beanieFeeAmount);
-        accruedAdminFees = 0;
-        _processDevFeesToken(
-            address(this),
-            devFeeAmount,
-            beanieFeeAmount,
-            beanBuybackAmount
-        );
     }
 
     // PUBLIC ESCROW FUNCTIONS
@@ -715,11 +533,8 @@ contract FungibleMarket is ReentrancyGuard, Ownable {
             );
     }
 
-    function totalFees() public view returns (uint256) {
-        return (devFee +
-            beanieHolderFee +
-            beanBuybackFee +
-            defaultCollectionOwnerFee);
+    function totalAdminFees() public view returns(uint256 totalFee) {
+        totalFee = BeanFeeProcessor.totalFee();
     }
 
     function checkEscrowAmount(address user) external view returns (uint256) {
@@ -743,10 +558,6 @@ contract FungibleMarket is ReentrancyGuard, Ownable {
         administrators[admin] = value;
     }
 
-    function setPaymentToken(address _token) external onlyOwner {
-        TOKEN = IERC20(_token);
-    }
-
     function setTrading(bool value) external onlyOwner {
         require(tradingPaused != value, "Already set to that value.");
         tradingPaused = value;
@@ -767,21 +578,6 @@ contract FungibleMarket is ReentrancyGuard, Ownable {
         collectionOwners[ca] = _owner;
     }
 
-    function setDevFee(uint256 fee) external onlyOwner {
-        require(fee <= 100, "Max 10% fee");
-        devFee = fee;
-    }
-
-    function setBeanieHolderFee(uint256 fee) external onlyOwner {
-        require(fee <= 100, "Max 10% fee");
-        beanieHolderFee = fee;
-    }
-
-    function setBeanBuyBackFee(uint256 fee) external onlyOwner {
-        require(fee <= 100, "Max 10% fee");
-        beanBuybackFee = fee;
-    }
-
     function setCollectionOwnerFee(address ca, uint256 fee) external {
         bool verifiedCollectionOwner = collectionOwnersCanSetRoyalties &&
             (_msgSender() == collectionOwners[ca]);
@@ -795,24 +591,8 @@ contract FungibleMarket is ReentrancyGuard, Ownable {
         defaultCollectionOwnerFee = fee;
     }
 
-    function setDevAddress(address _address) external onlyOwner {
-        devAddress = _address;
-    }
-
-    function setBeanieHolderAddress(address _address) external onlyOwner {
-        beanieHolderAddress = _address;
-    }
-
-    function setBeanBuybackAddress(address _address) external onlyOwner {
-        beanBuybackAddress = _address;
-    }
-
     function setFeesOn(bool _value) external onlyOwner {
         feesOn = _value;
-    }
-
-    function setAutoSendFees(bool _value) external onlyOwner {
-        autoSendFees = _value;
     }
 
     function setCollectionOwnersCanSetRoyalties(bool _value)
@@ -848,34 +628,20 @@ contract FungibleMarket is ReentrancyGuard, Ownable {
     }
 
     // PRIVATE HELPERS
-    function calculateAmounts(address ca, uint256 amount)
+    function _calculateAmounts(address ca, uint256 amount)
         private
         view
-        returns (
-            uint256,
-            uint256,
-            uint256,
-            uint256,
-            uint256
-        )
+        returns (uint256, uint256, uint256)
     {
         uint256 _collectionOwnerFee = collectionOwnerFees[ca] == 0
             ? defaultCollectionOwnerFee
             : collectionOwnerFees[ca];
-        uint256 devFeeAmount = (amount * devFee) / 10000;
-        uint256 beanieHolderFeeAmount = (amount * beanieHolderFee) / 10000;
-        uint256 beanBuybackFeeAmount = (amount * beanBuybackFee) / 10000;
-        uint256 collectionOwnerFeeAmount = (amount * _collectionOwnerFee) /
-            10000;
-        uint256 remainder = amount -
-            (devFeeAmount +
-                beanieHolderFeeAmount +
-                beanBuybackFeeAmount +
-                collectionOwnerFeeAmount);
+
+        uint256 totalAdminFee = (amount * totalAdminFees()) / 10000;
+        uint256 collectionOwnerFeeAmount = (amount * _collectionOwnerFee) / 10000;
+        uint256 remainder = amount - (totalAdminFee + collectionOwnerFeeAmount);
         return (
-            devFeeAmount,
-            beanieHolderFeeAmount,
-            beanBuybackFeeAmount,
+            totalAdminFee,
             collectionOwnerFeeAmount,
             remainder
         );
@@ -891,10 +657,6 @@ contract FungibleMarket is ReentrancyGuard, Ownable {
     function _sendEth(address _address, uint256 _amount) private {
         (bool success, ) = _address.call{value: _amount}("");
         require(success, "Transfer failed.");
-    }
-
-    function approveSelf() public onlyAdmins() {
-        IERC20(TOKEN).approve(address(this), type(uint256).max);
     }
 
     // Required in order to receive MOVR/GLMR.

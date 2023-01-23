@@ -97,11 +97,8 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
     uint128 constant SMOL_MAX_INT = ~uint128(0);
 
     // Fees are out of 10000, to allow for 0.01 - 9.99% fees.
-    uint256 public defaultCollectionOwnerFee = 0; //0%
-    uint256 public totalEscrowedAmount = 0;
-
-    uint256 public accruedAdminFeesEth;
-    uint256 public accruedAdminFees;
+    uint256 public defaultCollectionOwnerFee; //0%
+    uint256 public totalEscrowedAmount;
 
     IWETH public TOKEN; //WETH, NOVA
     IBeanFeeProcessor public BeanFeeProcessor;
@@ -147,14 +144,13 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
 
     bool public tradingPaused = false;
     bool public feesOn = true;
-    bool public autoSendFees = true;
     bool public collectionOwnersCanSetRoyalties = true;
     bool public usersCanWithdrawEscrow = false;
 
     mapping(address => bool) collectionTradingEnabled;
     mapping(address => address) collectionOwners;
-    mapping(address => uint256) totalInEscrow;
     mapping(address => uint256) collectionOwnerFees;
+    mapping(address => uint256) totalInEscrow;
     mapping(address => bool) administrators;
 
     modifier onlyAdmins() {
@@ -167,7 +163,6 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         TOKEN = IWETH(_TOKEN);
         BeanFeeProcessor = IBeanFeeProcessor(_BEANFEEPROCESSOR);
         administrators[msg.sender] = true;
-        approveSelf();
     }
 
     //---------------------------------
@@ -293,19 +288,11 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         token.safeTransferFrom(originalLister, to, listing.tokenId);
 
         //Fees
-        if (feesOn) {
-            (
-                uint256 totalAdminFeeAmount,
-                uint256 collectionOwnerFeeAmount,
-                uint256 saleNetFees
-            ) = _calculateAmounts(listing.contractAddress, listing.price);
-            _sendEth(originalLister, saleNetFees); // Pay lister
-            _sendEth(collectionOwners[listing.contractAddress], collectionOwnerFeeAmount); // Pay royalties
-            if (autoSendFees) _processDevFeesEth(totalAdminFeeAmount);
-        }
-        else {
-            _sendEth(originalLister, listing.price);
-        }
+        _processFees(
+            listing.contractAddress,
+            listing.price,
+            originalLister
+        );
 
         // Ty for your business
         emit TokenPurchased(
@@ -408,7 +395,6 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         uint256 tokenId,
         uint256 expiry
     ) public payable nonReentrant {
-        TOKEN.deposit{value: msg.value}();
         _processEscrowOffer(ca, tokenId, expiry, msg.value);
     }
 
@@ -421,6 +407,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         //TODO: Make this use safeTransfer
         bool success = TOKEN.transferFrom(msg.sender, address(this), price);
         if (!success) revert BEAN_TransferFailed();
+        TOKEN.withdraw(price);
         _processEscrowOffer(ca, tokenId, expiry, price);
     }
 
@@ -459,7 +446,6 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         if (
             offer.offerer != msg.sender && 
             !administrators[msg.sender] && 
-            offer.expiry > block.timestamp &&
             IERC721(offer.contractAddress).ownerOf(offer.tokenId) != msg.sender
         ) revert BEAN_NotAuthorized();
         if (offer.price == 0) 
@@ -598,7 +584,6 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
     function _returnEscrow(address depositor, uint256 escrowAmount) private {
         totalEscrowedAmount -= escrowAmount;
         totalInEscrow[depositor] -= escrowAmount;
-        TOKEN.withdraw(escrowAmount);
         _sendEth(depositor, escrowAmount);
     }
 
@@ -612,19 +597,24 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
     *   @dev functions for accruing and processing ETH fees.
     */
 
-    // Private function for processing ETH fees. Used in both dev process and auto process.
-    function _processDevFeesEth(
-        uint256 amount
+    function _processFees(
+        address ca,
+        uint256 amount,
+        address oldOwner
     ) private {
-        if (amount != 0 ) _sendEth(address(BeanFeeProcessor), amount);
-    }
-
-    // Private function for processing token fees. Used in both dev process and auto process.
-    function _processDevFeesToken(
-        address from,
-        uint256 amount
-    ) private {
-        if (amount != 0 ) TOKEN.transferFrom(from, address(BeanFeeProcessor), amount);
+        if (feesOn) {
+            //calculate fees
+            (
+                uint256 totalAdminFeeAmount,
+                uint256 collectionOwnerFeeAmount,
+                uint256 remainder
+            ) = _calculateAmounts(ca, amount);
+            _sendEth(oldOwner, remainder);
+            _sendEth(collectionOwners[ca], collectionOwnerFeeAmount);
+            _sendEth(address(BeanFeeProcessor), totalAdminFeeAmount);
+        } else {
+            _sendEth(oldOwner, amount);
+        }
     }
 
     //---------------------------------
@@ -732,10 +722,6 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         feesOn = _value;
     }
 
-    function setAutoSendFees(bool _value) external onlyOwner {
-        autoSendFees = _value;
-    }
-
     function setUsersCanWithdrawEscrow(bool _value) external onlyAdmins {
         usersCanWithdrawEscrow = _value;
     }
@@ -815,20 +801,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         //swippity swappity
         _nft.safeTransferFrom(oldOwner, newOwner, tokenId);
         //fees
-        TOKEN.withdraw(price);
-        if (feesOn) {
-            //calculate fees
-            (
-                uint256 totalAdminFeeAmount,
-                uint256 collectionOwnerFeeAmount,
-                uint256 remainder
-            ) = _calculateAmounts(ca, price);
-            _sendEth(oldOwner, remainder);
-            _sendEth(collectionOwners[ca], collectionOwnerFeeAmount);
-            _processDevFeesEth(totalAdminFeeAmount);
-        } else {
-            _sendEth(oldOwner, price);
-        }
+        _processFees(ca, price, oldOwner);
     }
 
     function _tokenPurchase(
@@ -840,28 +813,14 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         address payable newOwner
     ) private {
         _nft.safeTransferFrom(oldOwner, newOwner, tokenId);
-        //fees
-        if (feesOn) {
-            (
-                uint256 totalAdminFeeAmount,
-                uint256 collectionOwnerFeeAmount,
-                uint256 remainder
-            ) = _calculateAmounts(ca, price);
-            TOKEN.transferFrom(newOwner, oldOwner, remainder);
-            TOKEN.transferFrom(newOwner, collectionOwners[ca], collectionOwnerFeeAmount);
-            _processDevFeesToken(newOwner, totalAdminFeeAmount);
-        } else {
-            TOKEN.transferFrom(newOwner, oldOwner, price);
-        }
+        TOKEN.transferFrom(newOwner, address(this), price);
+        TOKEN.withdraw(price);
+        _processFees(ca, price, oldOwner);
     }
 
     function _sendEth(address _address, uint256 _amount) private {
         (bool success, ) = _address.call{value: _amount}("");
         require(success, "Transfer failed.");
-    }
-
-    function approveSelf() public onlyAdmins() {
-        TOKEN.approve(address(this), type(uint256).max);
     }
 
     receive() external payable {}

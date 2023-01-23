@@ -6,6 +6,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./interface/IWETH.sol";
 
 error BEAN_NotOwnerOrAdmin();
+error PROC_TransferFailed();
 
 contract BeanFeeProcessor is Ownable {
 
@@ -45,7 +46,7 @@ contract BeanFeeProcessor is Ownable {
         uint256 totalFee_ = totalFee;
         uint256 devAmount = amount * devFee / totalFee_;
         uint256 beanieHolderAmount = amount * beanieHolderFee / totalFee_;
-        uint256 beanBuybackAmount = totalFee_ - devAmount - beanieHolderAmount;
+        uint256 beanBuybackAmount = amount - devAmount - beanieHolderAmount;
         return(devAmount, beanieHolderAmount, beanBuybackAmount);
     }
 
@@ -67,11 +68,11 @@ contract BeanFeeProcessor is Ownable {
         uint256 beanieHolderAmount,
         uint256 beanBuybackAmount
     ) private {
-        if (devAmount != 0 )
+        if (devAmount != 0)
             _sendEth(devAddress, devAmount);
-        if (beanieHolderAmount != 0 )
+        if (beanieHolderAmount != 0)
             _sendEth(beanieHolderAddress, beanieHolderAmount);
-        if (beanBuybackAmount != 0 )
+        if (beanBuybackAmount != 0)
             _sendEth(beanBuybackAddress, beanBuybackAmount);
     }
 
@@ -111,7 +112,7 @@ contract BeanFeeProcessor is Ownable {
 
     function _sendEth(address _address, uint256 _amount) private {
         (bool success, ) = _address.call{value: _amount}("");
-        require(success, "Transfer failed.");
+        if (!success) revert PROC_TransferFailed();
     }
 
     function approveSelf() public onlyAdmins() {
