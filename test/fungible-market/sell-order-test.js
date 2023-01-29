@@ -12,7 +12,7 @@ function bigNum(num) {
   return ethers.BigNumber.from(num);
 }
 
-describe("Sell orders", function () {
+describe("Sell orders (1155)", function () {
   async function deployMarketAndNFTFixture() {
     const [owner, ...addrs] = await ethers.getSigners();
     const admin = addrs[9];
@@ -29,7 +29,7 @@ describe("Sell orders", function () {
     const feeProcessor = await FeeProcessor.deploy(weth.address);
     await feeProcessor.deployed();
 
-    const MARKET = await ethers.getContractFactory("FungibleMarket");
+    const MARKET = await ethers.getContractFactory("FungibleBeanieMarketV1");
     const fungibleMarket = await MARKET.deploy(weth.address, feeProcessor.address);
     await fungibleMarket.deployed();
 
@@ -68,7 +68,7 @@ describe("Sell orders", function () {
     const feeProcessor = await FeeProcessor.deploy(weth.address);
     await feeProcessor.deployed();
 
-    const MARKET = await ethers.getContractFactory("FungibleMarket");
+    const MARKET = await ethers.getContractFactory("FungibleBeanieMarketV1");
     const fungibleMarket = await MARKET.deploy(weth.address, feeProcessor.address);
     await fungibleMarket.deployed();
 

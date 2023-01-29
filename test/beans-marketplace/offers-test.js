@@ -486,7 +486,7 @@ describe("Market Offers", function () {
 
       let offerHash = addr2offers[0];
 
-      await beanieMarket.connect(owner).cancelOffer(offerHash);
+      await beanieMarket.connect(owner).cancelOfferAdmin(offerHash, true);
 
       addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
 

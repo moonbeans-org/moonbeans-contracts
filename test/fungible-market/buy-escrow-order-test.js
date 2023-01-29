@@ -13,7 +13,7 @@ function bigNum(num) {
   return ethers.BigNumber.from(num);
 }
 
-describe("Buy escrow orders", function () {
+describe("Buy escrow orders (1155)", function () {
   async function deployMarketAndNFTFixture() {
     const [owner, ...addrs] = await ethers.getSigners();
     const admin = addrs[9];
@@ -30,7 +30,7 @@ describe("Buy escrow orders", function () {
     const feeProcessor = await FeeProcessor.deploy(weth.address);
     await feeProcessor.deployed();
 
-    const MARKET = await ethers.getContractFactory("FungibleMarket");
+    const MARKET = await ethers.getContractFactory("FungibleBeanieMarketV1");
     const fungibleMarket = await MARKET.deploy(weth.address, feeProcessor.address);
     await fungibleMarket.deployed();
 
@@ -69,7 +69,7 @@ describe("Buy escrow orders", function () {
     const feeProcessor = await FeeProcessor.deploy(weth.address);
     await feeProcessor.deployed();
 
-    const MARKET = await ethers.getContractFactory("FungibleMarket");
+    const MARKET = await ethers.getContractFactory("FungibleBeanieMarketV1");
     const fungibleMarket = await MARKET.deploy(weth.address, feeProcessor.address);
     await fungibleMarket.deployed();
 
@@ -208,7 +208,7 @@ describe("Buy escrow orders", function () {
         now + 10,
         tradeFlags
       ))
-      .to.be.revertedWithCustomError(fungibleMarket, "BEAN_PaymentTokenNotAproved");
+      .to.be.revertedWithCustomError(fungibleMarket, "BEAN_PaymentTokenNotApproved");
     });
 
     it("Cannot make buy order without any payment tokens", async function () {
@@ -471,7 +471,7 @@ describe("Buy escrow orders", function () {
       const feeProcessor = await FeeProcessor.deploy(weth.address);
       await feeProcessor.deployed();
   
-      const MARKET = await ethers.getContractFactory("FungibleMarket");
+      const MARKET = await ethers.getContractFactory("FungibleBeanieMarketV1");
       const fungibleMarket = await MARKET.deploy(weth.address, feeProcessor.address);
       await fungibleMarket.deployed();
   
@@ -589,7 +589,7 @@ describe("Buy escrow orders", function () {
       const feeProcessor = await FeeProcessor.deploy(weth.address);
       await feeProcessor.deployed();
   
-      const MARKET = await ethers.getContractFactory("FungibleMarket");
+      const MARKET = await ethers.getContractFactory("FungibleBeanieMarketV1");
       const fungibleMarket = await MARKET.deploy(weth.address, feeProcessor.address);
       await fungibleMarket.deployed();
   

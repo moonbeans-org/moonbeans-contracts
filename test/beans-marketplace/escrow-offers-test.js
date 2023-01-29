@@ -637,7 +637,7 @@ describe("Market Escrow Offers", function () {
 
       let offerHash = addr2offers[0];
 
-      await expect(beanieMarket.connect(owner).cancelOffer(offerHash)).to.changeEtherBalances(
+      await expect(beanieMarket.connect(owner).cancelOfferAdmin(offerHash, true)).to.changeEtherBalances(
         [addrs[2].address], [ONE_ETH]);
 
       addr2offers = await beanieMarket.getOffersByOfferer(addrs[2].address);
