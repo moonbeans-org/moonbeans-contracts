@@ -14,8 +14,8 @@ async function main() {
   // await hre.run('compile');
 
   // We get the contract to deploy
-  const MarketPlace = await hre.ethers.getContractFactory("MarketPlace");
-  const greeter = await MarketPlace.deploy();
+  const BeanieMarketV11 = await hre.ethers.getContractFactory("BeanieMarketV11");
+  const greeter = await BeanieMarketV11.deploy("0x722E8BdD2ce80A4422E880164f2079488e115365");
 
   await greeter.deployed();
 

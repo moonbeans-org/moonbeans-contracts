@@ -10,7 +10,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 
 contract BeanieDistributor is IERC721Receiver, ReentrancyGuard, Ownable {
 
-  address public TOKEN = 0xAcc15dC74880C9944775448304B263D191c6077F; //WGLMR
+  address public TOKEN = 0x722E8BdD2ce80A4422E880164f2079488e115365; //WETH, NOVA
   uint256 public allTimeBalance = 0;
   uint256 tokenAllTimeBalance = 0;
   uint256 lastTokenBalance = 0;

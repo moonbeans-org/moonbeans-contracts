@@ -1,4 +1,6 @@
-//Custom NFT Marketplace Contract. From your favorite beans around - MoonBeans!
+// Custom NFT Marketplace Contract. From your favorite beans around - MoonBeans!
+// Used in conjunction with the Exiled Racers launch - allowing for a custom Private auction that can be ended by an external contract.
+// For this launch, end() was called by an external system utilizing API3's QRNG. 
 
 pragma solidity ^0.8.4;
 // SPDX-License-Identifier: MIT
