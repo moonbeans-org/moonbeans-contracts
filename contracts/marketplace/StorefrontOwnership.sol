@@ -31,4 +31,8 @@ contract StorefrontOwnership is Ownable {
         administrators[adminAddress] = !administrators[adminAddress];
     }
 
+    function setDefaultOwner(address newDefaultOwner) external onlyOwner {
+        DEFAULT_OWNER = newDefaultOwner;
+    }
+
 }
