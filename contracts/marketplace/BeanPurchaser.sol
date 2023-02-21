@@ -19,7 +19,7 @@ contract BeanPurchaser is Ownable {
         }
     }
 
-    function buyBack() public {
+    function buyBack() public onlyOwner {
         uint currentBalance = address(this).balance;
         if (currentBalance >= threshold) {
             // generate the uniswap pair path of token -> weth
@@ -60,6 +60,10 @@ contract BeanPurchaser is Ownable {
 
     function recover(address to, uint256 amount) external onlyOwner {
         payable(to).transfer(amount);
+    }
+
+    function setBuyback() external onlyOwner {
+        autobuy = !autobuy;
     }
 
 

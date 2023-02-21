@@ -381,8 +381,8 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
         if (feesOn) {
             (uint256 totalAdminFeeAmount, uint256 collectionOwnerFeeAmount, uint256 remainder) = _calculateAmounts(ca, amount);
             _sendEth(oldOwner, remainder);
-            _sendEth(collectionOwners[ca], collectionOwnerFeeAmount);
-            _sendEth(address(BeanFeeProcessor), totalAdminFeeAmount);
+            if (collectionOwnerFeeAmount != 0) _sendEth(collectionOwners[ca], collectionOwnerFeeAmount);
+            if (totalAdminFeeAmount != 0) _sendEth(address(BeanFeeProcessor), totalAdminFeeAmount);
         } else {
             _sendEth(oldOwner, amount);
         }
