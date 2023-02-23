@@ -424,14 +424,16 @@ contract FungibleBeanieMarketV1 is ReentrancyGuard, Ownable {
         if (msg.value > 0) revert BEAN_BuyOrderWithValue();
         if (!IERC1155(_trade.ca).isApprovedForAll(seller, address(this))) revert BEAN_ContractNotApproved();
         if (IERC1155(_trade.ca).balanceOf(seller, _trade.tokenId) < amount) revert BEAN_NotEnoughTokensToFulfull();
-        if (TOKEN.balanceOf(_trade.maker) < totalPrice) revert BEAN_NotEnoughMakerFunds();
 
-        // Escrow only logic - validate that trade maker either has enough escrowed funds or a high enough WETH allowance. 
         if (_trade.tradeFlags.isEscrowed) {
+            // Escrow only logic - validate that trade maker either has enough escrowed funds. 
             if (totalInEscrow[_trade.maker] < totalPrice) revert BEAN_NotEnoughInEscrow();
-            else if (TOKEN.allowance(_trade.maker, address(this)) < totalPrice) revert BEAN_NotEnoughSellerAllowance();
             totalEscrowedAmount -= totalPrice;
             totalInEscrow[purchaser] -= totalPrice;
+        } else {
+            // Non-Escrowed checks - validated that trademaker has enough WETH and the marketplace has a sufficient WETH allowance.
+            if (TOKEN.balanceOf(_trade.maker) < totalPrice) revert BEAN_NotEnoughMakerFunds();
+            if (TOKEN.allowance(_trade.maker, address(this)) < totalPrice) revert BEAN_NotEnoughSellerAllowance();
         }
 
         uint256 remainingQuantity = _trade.quantity - amount;
