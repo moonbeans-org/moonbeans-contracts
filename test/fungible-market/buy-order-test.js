@@ -584,7 +584,7 @@ describe("Buy orders (1155)", function () {
 
       await expect(fungibleMarket.connect(addrs[0]).acceptTrade(
         buyOrderToFulfill, 1)
-      ).to.be.revertedWithCustomError(fungibleMarket, "BEAN_NotEnoughTokensToFulfull");
+      ).to.be.revertedWithCustomError(fungibleMarket, "BEAN_NotEnoughTokensToFulfill");
     });
 
     it("Cannot fulfill buy order if not taking full order and partial orders disabled", async function () {
@@ -648,7 +648,7 @@ describe("Buy orders (1155)", function () {
 
       await expect(fungibleMarket.connect(addrs[0]).acceptTrade(
         buyOrderToFulfill, 1)
-      ).to.be.revertedWithCustomError(fungibleMarket, "BEAN_TradeNotParitalFill");
+      ).to.be.revertedWithCustomError(fungibleMarket, "BEAN_TradeNotPartialFill");
 
     });
   })

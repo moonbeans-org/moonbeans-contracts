@@ -290,6 +290,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
             if (offer.price > totalInEscrow[offer.offerer]) revert BEAN_EscrowOverWithdraw();
             _returnEscrow(offer.offerer, offer.price);
         }
+        emit OfferCancelled(offer.contractAddress, offer.tokenId, offer.price, offer.expiry, offer.offerer, offerHash, block.timestamp);
     }
 
     // Same as above, admin only, no ownership check.
@@ -303,6 +304,7 @@ contract BeanieMarketV11 is ReentrancyGuard, Ownable {
             if (offer.price > totalInEscrow[offer.offerer]) revert BEAN_EscrowOverWithdraw();
             _returnEscrow(offer.offerer, offer.price);
         }
+        emit OfferCancelled(offer.contractAddress, offer.tokenId, offer.price, offer.expiry, offer.offerer, offerHash, block.timestamp);
     }
 
     // Accept an active offer.

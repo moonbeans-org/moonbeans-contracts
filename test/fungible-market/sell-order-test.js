@@ -231,7 +231,7 @@ describe("Sell orders (1155)", function () {
 
       await expect(fungibleMarket.connect(addrs[5]).acceptTrade(
         sellOrderToFulfill, 1, { value: listingData.price })
-      ).to.be.revertedWithCustomError(fungibleMarket, "BEAN_TradeNotParitalFill");
+      ).to.be.revertedWithCustomError(fungibleMarket, "BEAN_TradeNotPartialFill");
 
     });
   });
@@ -586,7 +586,7 @@ describe("Sell orders (1155)", function () {
 
       await expect(fungibleMarket.connect(addrs[5]).acceptTrade(
         sellOrderToFulfill, 1, { value: listingData.price })
-      ).to.be.revertedWithCustomError(fungibleMarket, "BEAN_NotEnoughTokensToFulfull");
+      ).to.be.revertedWithCustomError(fungibleMarket, "BEAN_NotEnoughTokensToFulfill");
     });
   })
 

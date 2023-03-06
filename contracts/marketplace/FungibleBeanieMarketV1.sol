@@ -31,15 +31,15 @@ error BEAN_PaymentTokenNotApproved();
 error BEAN_OrderExpired();
 error BEAN_OrderDoesNotExist();
 error BEAN_NotAuthorized();
-error BEAN_TradeNotParitalFill();
-error BEAN_NotEnoughTokensToFulfullBuy();
+error BEAN_TradeNotPartialFill();
+error BEAN_NotEnoughTokensToFulfillBuy();
 error BEAN_NotEnoughInEscrow();
 error BEAN_NotEnoughSellerAllowance();
 error BEAN_NotEnoughMakerFunds();
 error BEAN_AmountOverQuantity();
-error BEAN_NotEnoughTokensToFulfull();
+error BEAN_NotEnoughTokensToFulfill();
 error BEAN_SellFulfillUnderfunded();
-error BEAN_BuyOrderWithValue(); //TODO: Test
+error BEAN_BuyOrderWithValue();
 error BEAN_TransferFailed();
 
 // Escrow
@@ -217,7 +217,7 @@ contract FungibleBeanieMarketV1 is ReentrancyGuard, Ownable {
         if (!collectionTradingEnabled[_trade.ca]) revert BEAN_CollectionNotEnabled();
         if (_trade.price == 0) revert BEAN_OrderDoesNotExist();
         if (_trade.expiry < block.timestamp) revert BEAN_OrderExpired();
-        if (!_trade.tradeFlags.allowPartialFills && amount != _trade.quantity) revert BEAN_TradeNotParitalFill();
+        if (!_trade.tradeFlags.allowPartialFills && amount != _trade.quantity) revert BEAN_TradeNotPartialFill();
         if (amount > _trade.quantity) revert BEAN_AmountOverQuantity();
 
         uint256 totalPrice = _trade.price * amount;
@@ -401,7 +401,7 @@ contract FungibleBeanieMarketV1 is ReentrancyGuard, Ownable {
     function _fulfillSellOrder(bytes32 tradeId, Trade memory _trade, address seller, address purchaser, uint256 totalPrice, uint256 amount) internal {
         // Check allowance and balance of token seller and verify that buyer sent enough ETH.
         if (!IERC1155(_trade.ca).isApprovedForAll(seller, address(this))) revert BEAN_ContractNotApproved();
-        if (IERC1155(_trade.ca).balanceOf(seller, _trade.tokenId) < amount) revert BEAN_NotEnoughTokensToFulfull();
+        if (IERC1155(_trade.ca).balanceOf(seller, _trade.tokenId) < amount) revert BEAN_NotEnoughTokensToFulfill();
         if (msg.value < totalPrice) revert BEAN_SellFulfillUnderfunded();
 
         // We validate that amount < quantity in acceptTrade.
@@ -423,7 +423,7 @@ contract FungibleBeanieMarketV1 is ReentrancyGuard, Ownable {
         // Check allowance and balance of token seller and buy order fultiller (trade maker).
         if (msg.value > 0) revert BEAN_BuyOrderWithValue();
         if (!IERC1155(_trade.ca).isApprovedForAll(seller, address(this))) revert BEAN_ContractNotApproved();
-        if (IERC1155(_trade.ca).balanceOf(seller, _trade.tokenId) < amount) revert BEAN_NotEnoughTokensToFulfull();
+        if (IERC1155(_trade.ca).balanceOf(seller, _trade.tokenId) < amount) revert BEAN_NotEnoughTokensToFulfill();
 
         if (_trade.tradeFlags.isEscrowed) {
             // Escrow only logic - validate that trade maker either has enough escrowed funds. 
