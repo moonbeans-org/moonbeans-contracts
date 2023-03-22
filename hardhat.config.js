@@ -48,7 +48,11 @@ module.exports = {
     arbitrumNova: {
       url: "https://nova.arbitrum.io/rpc",
       accounts: [process.env.PRIVATE_KEY ?? '']
-    }
+    },
+    arbitrumOne: {
+      url: "https://arbitrum-one.public.blastapi.io",
+      accounts: [process.env.PRIVATE_KEY ?? '']
+    },
   },
   gasReporter: {
     enabled: process.env.REPORT_GAS !== undefined,
@@ -61,6 +65,7 @@ module.exports = {
       moonbaseAlpha:  process.env.MOONBASE_API_KEY ?? "",
       moonbeam:  process.env.MOONBEAM_API_KEY ?? "",
       arbitrumGoerli: process.env.ARBITRUM_GOERLI_API_KEY ?? "",
+      arbitrumOne: process.env.ARBITRUM_ONE_API_KEY ?? "",
       arbitrumNova: process.env.ARBITRUM_NOVA_API_KEY ?? "",
     },
     customChains: [

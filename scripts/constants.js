@@ -1,5 +1,10 @@
+//These are all V2 contract addresses (post-audit).
+
 export const addressesMoonriver = {
-    WETH: '0x98878B06940aE243284CA214f92Bb71a2b032B8A'
+    WETH: '0x98878B06940aE243284CA214f92Bb71a2b032B8A',
+    FeeProcessor: '0xA80CFf9138F52623c3016fd1BE25d030FE94088f',
+    BeanieMarket: '0x11C0f9d0fc3E30E546B6C19C4a2da5caaaC19E5f',
+    FungibleBeanieMarket: '0x3686d82A54b39f3136A3B2eb12b77F5d577855D5'
 };
 
 export const addressesMoonbeam = {
@@ -15,11 +20,15 @@ export const addressesArbitrumNova = {
     BeanieDistributor: '0x25878392F62D65B0FE15Ec49C026D2B7aBEdddCF',
     FeeProcessor: '0x24c5CB884BF3AC3F6ceB0d41F90987B6fe0Dd4A7',
     BeanieMarket: '0x56892CBf4BFf9FCDE4E65076b135440F315a91f2',
-    FungibleBeanieMarketV1: '0x0d45F008283943E7F91Cf8af0e9e7Ea85d1ab01d'
+    FungibleBeanieMarket: '0x0d45F008283943E7F91Cf8af0e9e7Ea85d1ab01d'
 };
 
 export const addressesArbitrumOne = {
-    WETH: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1'
+    WETH: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1',
+    BeanieDistributor: '0x65b09ef8c5A096C5Fd3A80f1F7369E56eB932412',
+    FeeProcessor: '0xB967DaE501F16E229A83f0C4FeA263A4be528dF4',
+    BeanieMarket: '0x3A6dffd314818A37FA67c23465cf7992DdF229d6',
+    FungibleBeanieMarket: '0xC2392DD3e3fED2c8Ed9f7f0bDf6026fcd1348453'
 }
 
 export const addressesMoonbase = {
