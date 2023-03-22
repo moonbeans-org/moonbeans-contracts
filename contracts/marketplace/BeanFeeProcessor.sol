@@ -21,10 +21,10 @@ contract BeanFeeProcessor is Ownable {
 
     IWETH public TOKEN; //WETH, NOVA
     address public devAddress = 0x24312a0b911fE2199fbea92efab55e2ECCeC637D;
-    address public beanieHolderAddress = 0xB967DaE501F16E229A83f0C4FeA263A4be528dF4;
+    address public beanieHolderAddress = 0xdA6367C6510d8f2D20A345888f9Dff3eb3226B02;
     address public beanBuybackAddress = 0xE9b8258668E17AFA5D09de9F10381dE5565dbDc0;
 
-    bool autoSendFees;
+    bool autoSendFees = true;
 
     mapping(address => bool) administrators;
 

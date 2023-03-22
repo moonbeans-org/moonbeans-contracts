@@ -146,7 +146,7 @@ contract FungibleBeanieMarketV1 is ReentrancyGuard, Ownable {
         // Common checks
         if (tradingPaused) revert BEAN_TradingPaused();
         if (!collectionTradingEnabled[ca]) revert BEAN_CollectionNotEnabled();
-        if (expiry < block.timestamp) revert BEAN_OrderExpired();
+        if (expiry != 0 && expiry < block.timestamp) revert BEAN_OrderExpired();
         if (price == 0) revert BEAN_ZeroPrice();
         if (price > SMOL_MAX_INT || expiry > SMOLLER_MAX_INT) revert BEAN_IntegerOverFlow();
 
@@ -186,7 +186,7 @@ contract FungibleBeanieMarketV1 is ReentrancyGuard, Ownable {
         // If this is an escrowed offer, we want to limit who can cancel it to the trade creator and admins, for unexpected-eth-pushing-is-bad security reasons.
         // If it's not escrowed (and won't cause eth to go flying around), then the public can cancel offers that have expired.
         bool privilegedDeletoooor = _trade.maker == msg.sender || administrators[msg.sender];
-        bool expiredNonEscrowedTrade = !_trade.tradeFlags.isEscrowed && (_trade.expiry < block.timestamp);
+        bool expiredNonEscrowedTrade = !_trade.tradeFlags.isEscrowed && (_trade.expiry != 0 && _trade.expiry < block.timestamp);
         if (!privilegedDeletoooor && !expiredNonEscrowedTrade) revert BEAN_NotAuthorized(); 
 
         uint256 totalPrice = _trade.price * _trade.quantity;
@@ -216,7 +216,7 @@ contract FungibleBeanieMarketV1 is ReentrancyGuard, Ownable {
 
         if (!collectionTradingEnabled[_trade.ca]) revert BEAN_CollectionNotEnabled();
         if (_trade.price == 0) revert BEAN_OrderDoesNotExist();
-        if (_trade.expiry < block.timestamp) revert BEAN_OrderExpired();
+        if (_trade.expiry != 0 && _trade.expiry < block.timestamp) revert BEAN_OrderExpired();
         if (!_trade.tradeFlags.allowPartialFills && amount != _trade.quantity) revert BEAN_TradeNotPartialFill();
         if (amount > _trade.quantity) revert BEAN_AmountOverQuantity();
 
@@ -233,7 +233,7 @@ contract FungibleBeanieMarketV1 is ReentrancyGuard, Ownable {
             revert("Trade in invalid state.");
         }
 
-        emit TradeAccepted(tradeId, _trade.ca, _trade.tokenId, _trade.quantity, _trade.price, seller, purchaser, _trade.tradeFlags.tradeType, _trade.expiry, block.timestamp);
+        emit TradeAccepted(tradeId, _trade.ca, _trade.tokenId, amount, _trade.price, seller, purchaser, _trade.tradeFlags.tradeType, _trade.expiry, block.timestamp);
     }
 
     function _validateSellOrder(address ca, address maker, uint256 tokenId, uint256 quantity, TradeFlags memory tradeFlags) internal view {
@@ -314,8 +314,17 @@ contract FungibleBeanieMarketV1 is ReentrancyGuard, Ownable {
         return collectionOwnerFees[ca];
     }
 
-    function getTrade(bytes32 tradeID) external view returns (Trade memory) {
+    function getTrade(bytes32 tradeID) public view returns (Trade memory) {
         return trades[tradeID];
+    }
+
+    function isValidTrade(bytes32 tradeID) external view returns (bool validTrade) {
+        Trade memory trade = getTrade(tradeID);
+        IERC1155 token = IERC1155(trade.ca);
+        //if selling tokens, valid if seller has approved tokens for sale
+        bool tokenApproved = trade.tradeFlags.tradeType == TradeType.SELL ? token.isApprovedForAll(trade.maker, address(this)) : true;
+        bool tokenBalance = trade.tradeFlags.tradeType == TradeType.SELL ? token.balanceOf(trade.maker, trade.tokenId) >= trade.quantity : true;
+        validTrade = (trade.expiry > block.timestamp || trade.expiry == 0) && tokenApproved && tokenBalance;
     }
 
     //---------------------------------
