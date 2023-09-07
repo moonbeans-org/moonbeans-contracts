@@ -180,6 +180,7 @@ contract FungibleBeanieMarketV1 is ReentrancyGuard, Ownable {
     // Cancel a trade that the sender initiated. 
     function cancelTrade(bytes32 tradeId) external nonReentrant {
         // Validate that trade can be cancelled.
+
         Trade memory _trade = trades[tradeId];
         if (_trade.price == 0) revert BEAN_OrderDoesNotExist();
 
@@ -197,8 +198,12 @@ contract FungibleBeanieMarketV1 is ReentrancyGuard, Ownable {
         // Cleanup data structures
         delete trades[tradeId];
         if (_trade.tradeFlags.tradeType == TradeType.BUY) {
+
+            updateBuyTradePosInUserRegister(_trade.maker, _trade.posInUserRegister);
             buyOrdersByUser[_trade.maker].swapPop(_trade.posInUserRegister);
         } else if (_trade.tradeFlags.tradeType == TradeType.SELL) {
+
+            updateSellTradePosInUserRegister(_trade.maker, _trade.posInUserRegister);
             sellOrdersByUser[_trade.maker].swapPop(_trade.posInUserRegister);
         }
 
@@ -417,6 +422,8 @@ contract FungibleBeanieMarketV1 is ReentrancyGuard, Ownable {
         uint256 remainingQuantity = _trade.quantity - amount;
 
         if (remainingQuantity == 0) {
+            
+            updateSellTradePosInUserRegister(_trade.maker, _trade.posInUserRegister);
             sellOrdersByUser[_trade.maker].swapPop(_trade.posInUserRegister);
             delete trades[tradeId];
         } else {
@@ -448,6 +455,10 @@ contract FungibleBeanieMarketV1 is ReentrancyGuard, Ownable {
         uint256 remainingQuantity = _trade.quantity - amount;
 
         if (remainingQuantity == 0) {
+            Trade storage replacementOrder = trades[buyOrdersByUser[_trade.maker][buyOrdersByUser[_trade.maker].length - 1]];
+            replacementOrder.posInUserRegister = _trade.posInUserRegister;
+
+            updateBuyTradePosInUserRegister(_trade.maker, _trade.posInUserRegister);
             buyOrdersByUser[_trade.maker].swapPop(_trade.posInUserRegister);
             delete trades[tradeId];
         } else {
@@ -464,6 +475,16 @@ contract FungibleBeanieMarketV1 is ReentrancyGuard, Ownable {
             TOKEN.withdraw(totalPrice);
             _processFees(_trade.ca, totalPrice, seller);
         }
+    }
+
+    function updateBuyTradePosInUserRegister(address maker, uint64 posInUserRegister) private {
+        Trade storage replacementOrder = trades[buyOrdersByUser[maker][buyOrdersByUser[maker].length - 1]];
+        replacementOrder.posInUserRegister = posInUserRegister;
+    }
+
+    function updateSellTradePosInUserRegister(address maker, uint64 posInUserRegister) private {
+        Trade storage replacementOrder = trades[sellOrdersByUser[maker][sellOrdersByUser[maker].length - 1]];
+        replacementOrder.posInUserRegister = posInUserRegister;
     }
 
     // I love you, you love me, we're a happy fee-mily
